@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "348531775448",
+    "project_id": "workshop2-medicineassistant",
+    "storage_bucket": "workshop2-medicineassistant.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:348531775448:android:5fd6d031f2cd0e731c04ad",
+        "android_client_info": {
+          "package_name": "com.biti.medicine_assistant_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD_PI45dC7z0qIm811IxeQAGO2Ygftzvls"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:348531775448:android:ec40d91d4f67d82a1c04ad",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_workshop2"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD_PI45dC7z0qIm811IxeQAGO2Ygftzvls"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
