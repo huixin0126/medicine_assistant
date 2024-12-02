@@ -20,6 +20,7 @@ class _MedicationReminderScreenState extends State<MedicationReminderScreen> {
   List<Map<String, dynamic>> reminders = [];
   bool isLoading = true; // Flag to track loading state
   bool noReminders = false; // Flag for no reminders found
+  bool showPastReminders = false; // State to toggle reminders
 
   @override
   void initState() {
@@ -142,7 +143,7 @@ Future<List<Map<String, dynamic>>> fetchReminders({bool onlyActive = false}) asy
             DateTime reminderTime = time is Timestamp
                 ? time.toDate()
                 : DateTime.parse(time.toString());
-            return reminderTime.isAfter(now);
+            return reminderTime.isAfter(now.subtract(const Duration(days: 1)));
           })
           .toList();
 
@@ -270,8 +271,33 @@ Future<void> vibrateOnAction() async {
   }
 }
 
+ void toggleReminderType(bool showPast) {
+    setState(() {
+      showPastReminders = showPast;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final DateTime now = DateTime.now();
+    List<Map<String, dynamic>> pastReminders = reminders.where((reminder) {
+      DateTime firstTime = reminder['times'].first is Timestamp
+          ? reminder['times'].first.toDate()
+          : DateTime.parse(reminder['times'].first.toString());
+      return firstTime.isBefore(now) &&
+          firstTime.isAfter(now.subtract(const Duration(days: 1)));
+    }).toList();
+
+    List<Map<String, dynamic>> futureReminders = reminders.where((reminder) {
+      DateTime firstTime = reminder['times'].first is Timestamp
+          ? reminder['times'].first.toDate()
+          : DateTime.parse(reminder['times'].first.toString());
+      return firstTime.isAfter(now);
+    }).toList();
+
+    List<Map<String, dynamic>> currentReminders =
+        showPastReminders ? pastReminders : futureReminders;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Medication Reminder'),
@@ -285,22 +311,106 @@ Future<void> vibrateOnAction() async {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
                   ),
                 )
-              : ListView.builder(
-                  itemCount: reminders.length,
-                  itemBuilder: (context, index) {
-                    final reminder = reminders[index];
-                    return ReminderCard(
-                      name: reminder['name'],
-                      dosage: reminder['dosage'],
-                      dose: reminder['dose'],
-                      imageUrl: reminder['imageUrl'],
-                      mealTiming: reminder['mealTiming'],
-                      times: reminder['times'],
-                      reminderID: reminder['reminderID'],
-                      userID: widget.userID,
-                      onComplete: ()async {await onCompleteReminder(reminder['reminderID']);},
-                    );
-                  },
+              : Column(
+                  children: [
+                    // Toggle Buttons
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[200],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => toggleReminderType(true),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: showPastReminders
+                                        ? Colors.blue
+                                        : Colors.grey[200],
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Previous',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: showPastReminders
+                                          ? Colors.white
+                                          : Colors.black,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => toggleReminderType(false),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: !showPastReminders
+                                        ? Colors.green
+                                        : Colors.grey[200],
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Upcoming',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: !showPastReminders
+                                          ? Colors.white
+                                          : Colors.black,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Reminder List
+                    Expanded(
+                      child: currentReminders.isEmpty
+                          ? Center(
+                              child: Text(
+                                showPastReminders
+                                    ? 'No past reminders.'
+                                    : 'No upcoming reminders.',
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: currentReminders.length,
+                              itemBuilder: (context, index) {
+                                final reminder = currentReminders[index];
+                                return ReminderCard(
+                                  name: reminder['name'],
+                                  dosage: reminder['dosage'],
+                                  dose: reminder['dose'],
+                                  imageUrl: reminder['imageUrl'],
+                                  mealTiming: reminder['mealTiming'],
+                                  times: reminder['times'],
+                                  reminderID: reminder['reminderID'],
+                                  userID: widget.userID,
+                                  onComplete: () async {
+                                    await onCompleteReminder(
+                                        reminder['reminderID']);
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -316,6 +426,53 @@ Future<void> vibrateOnAction() async {
     );
   }
 }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(
+//         title: const Text('Medication Reminder'),
+//       ),
+//       body: isLoading
+//           ? const Center(child: CircularProgressIndicator())
+//           : noReminders
+//               ? const Center(
+//                   child: Text(
+//                     'No reminders found.',
+//                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+//                   ),
+//                 )
+//               : ListView.builder(
+//                   itemCount: reminders.length,
+//                   itemBuilder: (context, index) {
+//                     final reminder = reminders[index];
+//                     return ReminderCard(
+//                       name: reminder['name'],
+//                       dosage: reminder['dosage'],
+//                       dose: reminder['dose'],
+//                       imageUrl: reminder['imageUrl'],
+//                       mealTiming: reminder['mealTiming'],
+//                       times: reminder['times'],
+//                       reminderID: reminder['reminderID'],
+//                       userID: widget.userID,
+//                       onComplete: ()async {await onCompleteReminder(reminder['reminderID']);},
+//                     );
+//                   },
+//                 ),
+//       floatingActionButton: FloatingActionButton(
+//         onPressed: () {
+//           Navigator.push(
+//             context,
+//             MaterialPageRoute(
+//               builder: (context) => AddReminderScreen(userID: widget.userID),
+//             ),
+//           ).then((_) => fetchReminders());
+//         },
+//         child: const Icon(Icons.add),
+//       ),
+//     );
+//   }
+// }
 
 class ReminderCard extends StatelessWidget {
   final String name;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:medicine_assistant_app/firebase_options.dart';
+import 'package:medicine_assistant_app/page/home.dart';
 import 'package:medicine_assistant_app/page/chatbot.dart';
 import 'package:medicine_assistant_app/page/chat.dart';
 import 'package:medicine_assistant_app/page/chatbotapi.dart';
@@ -45,16 +46,16 @@ Future<void> main() async {
     AwesomeNotifications().requestPermissionToSendNotifications();
   }
 
-await AwesomeNotifications().createNotification(
-  content: NotificationContent(
-    id: 1,
-    channelKey: 'medicine_reminder',
-    title: 'Test Notification',
-    body: 'This is a test.',
-    notificationLayout: NotificationLayout.Default,
-    customSound: 'resource://raw/res_ringtone',
-  ),
-);
+// await AwesomeNotifications().createNotification(
+//   content: NotificationContent(
+//     id: 1,
+//     channelKey: 'medicine_reminder',
+//     title: 'Test Notification',
+//     body: 'This is a test.',
+//     notificationLayout: NotificationLayout.Default,
+//     customSound: 'resource://raw/res_ringtone',
+//   ),
+// );
 
   runApp(const MyApp());
 }
@@ -67,12 +68,12 @@ class MyApp extends StatelessWidget {
     const String userID = '2'; // Set the userID as "2"
 
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Medicine Assistant',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: MedicationReminderScreen(userID: userID), // Pass userID to the screen
+      home: const HomePage(userID: userID),// Pass userID to the screen
     );
   }
 }

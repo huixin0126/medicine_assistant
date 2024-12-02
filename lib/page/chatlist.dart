@@ -5,7 +5,8 @@ import 'package:medicine_assistant_app/page/chatbotapi.dart';
 import 'package:medicine_assistant_app/service/chat_service.dart';
 
 class ChatListPage extends StatefulWidget {
-  const ChatListPage({super.key});
+  final String userID;
+  const ChatListPage({super.key, required this.userID});
 
   @override
   _ChatListPageState createState() => _ChatListPageState();
@@ -21,7 +22,7 @@ class _ChatListPageState extends State<ChatListPage> {
   void initState() {
     super.initState();
     // Fetch the chat list initially
-    _chatsFuture = _fetchConnectedUsers('1'); // Replace '2' with the current user ID
+    _chatsFuture = _fetchConnectedUsers(widget.userID); // Replace '2' with the current user ID
   }
 
   @override
@@ -29,14 +30,14 @@ class _ChatListPageState extends State<ChatListPage> {
     super.didChangeDependencies();
     // Re-fetch chat data when returning from the chat page
     setState(() {
-      _chatsFuture = _fetchConnectedUsers('1'); // Replace '2' with the current user ID
+      _chatsFuture = _fetchConnectedUsers(widget.userID); // Replace '2' with the current user ID
     });
   }
 
   Future<void> _refreshChats() async {
     // Manually trigger a refresh
     setState(() {
-      _chatsFuture = _fetchConnectedUsers('1'); // Replace '2' with the current user ID
+      _chatsFuture = _fetchConnectedUsers(widget.userID); // Replace '2' with the current user ID
     });
   }
 
@@ -321,7 +322,7 @@ Future<String> _getChatID(String receiverID, String userID) async {
 
 @override
   Widget build(BuildContext context) {
-    final String userId = '1'; // Replace with the current logged-in user's ID
+    final String userId = widget.userID; // Replace with the current logged-in user's ID
 
     return Scaffold(
       appBar: AppBar(
