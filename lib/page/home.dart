@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:medicine_assistant_app/main.dart';
 import 'package:medicine_assistant_app/page/chatlist.dart'; // Import the ChatListPage
 import 'package:medicine_assistant_app/page/home.dart';
 import 'package:medicine_assistant_app/page/chatbot.dart';
@@ -6,6 +7,7 @@ import 'package:medicine_assistant_app/page/chat.dart';
 import 'package:medicine_assistant_app/page/chatbotapi.dart';
 import 'package:medicine_assistant_app/page/chatlist.dart';
 import 'package:medicine_assistant_app/page/reminder.dart';
+import 'package:medicine_assistant_app/page/helpAddReminder.dart';
 
 class HomePage extends StatefulWidget {
   final String userID;
@@ -33,6 +35,30 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _selectedIndex = index;  // Update the selected index
     });
+  }
+
+
+  void _showSnackBar() {
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text("Would you like to add a reminder for John?"),
+        action: SnackBarAction(
+          label: "Add Reminder",
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => HelpAddReminderScreen(
+                  userID: widget.userID,
+                  name: "John",
+                ),
+              ),
+            );
+          },
+        ),
+        duration: Duration(seconds: 10),
+      ),
+    );
   }
 
   @override
@@ -71,6 +97,10 @@ class _HomePageState extends State<HomePage> {
         currentIndex: _selectedIndex,  // Set the current selected index
         onTap: _onItemTapped,  // Handle tap to change the page
       ),
+      // floatingActionButton: FloatingActionButton(
+      //   onPressed: _showSnackBar,
+      //   child: Icon(Icons.add),
+      // ),
     );
   }
 }

@@ -13,6 +13,8 @@ import 'package:vibration/vibration.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:flutter_vibrate/flutter_vibrate.dart';
 
+final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized(); // Ensure bindings are initialized
 
@@ -65,9 +67,10 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const String userID = '2'; // Set the userID as "2"
+    const String userID = '1'; // Set the userID as "2"
 
     return MaterialApp(
+      scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'Medicine Assistant',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),

@@ -12,6 +12,9 @@ import 'package:medicine_assistant_app/widget/chat_dialog.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:medicine_assistant_app/service/cloudflare_service.dart';
+import 'package:medicine_assistant_app/page/helpAddReminder.dart';
+
+final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
 class ChatbotapiPage extends StatefulWidget {
   final String chatID;
@@ -72,6 +75,7 @@ void initState() {
     super.initState();
     chatID = widget.chatID;
     _speech = stt.SpeechToText();
+    _fetchUserName(widget.userID);
     _fetchNamesFromFirestore();
 
     // Initialize animation controller
@@ -163,44 +167,45 @@ void initState() {
 }
 
 // Fetch current user's name from Firestore
-  Future<void> _fetchUserName(String currentUserID) async {
-    try {
-      // Query Firestore to find the user document by userID
-      QuerySnapshot userSnapshot = await _firestore
-          .collection('User')
-          .where('userID', isEqualTo: currentUserID)
-          .get();
+Future<void> _fetchUserName(String currentUserID) async {
+  try {
+    // Query Firestore to find the user document by userID
+    QuerySnapshot userSnapshot = await _firestore
+        .collection('User')
+        .where('userID', isEqualTo: currentUserID)
+        .limit(1) // Limit to 1 result for efficiency
+        .get();
 
-      if (userSnapshot.docs.isNotEmpty) {
-        // Extract the name from the user document
-        setState(() {
-          currentUserName = userSnapshot.docs[0]['name'] ?? 'Unknown User';
-        });
-      } else {
-        setState(() {
-          currentUserName = 'User not found';
-        });
-      }
-    } catch (e) {
-      print("Error fetching user name: $e");
+    if (userSnapshot.docs.isNotEmpty) {
+      // Extract the name from the user document
       setState(() {
-        currentUserName = 'Error fetching user name';
+        currentUserName = (userSnapshot.docs[0].data() as Map<String, dynamic>)['name'] ?? 'Unknown User';
+      });
+    } else {
+      setState(() {
+        currentUserName = 'User not found';
       });
     }
+  } catch (e) {
+    print("Error fetching user name: $e");
+    setState(() {
+      currentUserName = 'Error fetching user name';
+    });
   }
+}
 
   Future<void> _fetchNamesFromFirestore() async {
     try {
       // Fetch senior names
       QuerySnapshot userSnapshot = await _usersCollection.get();
       _seniorNames = userSnapshot.docs
-          .map((doc) => doc['Name'].toString().toLowerCase())
+          .map((doc) => doc['name'].toString().toLowerCase())
           .toList();
 
       // Fetch medicine names
       QuerySnapshot medicineSnapshot = await _medicineCollection.get();
       _medicineNames = medicineSnapshot.docs
-          .map((doc) => doc['Name'].toString().toLowerCase())
+          .map((doc) => doc['name'].toString().toLowerCase())
           .toList();
     } catch (e) {
       print("Error fetching names: $e");
@@ -378,10 +383,12 @@ Future<void> _sendMessage(String message, {bool isFromChatbot = false}) async {
 //   }
 // }
 
-Future<void> _sendChatbotMessage(String conversationID, String userMessage) async {
-  // Add a placeholder for the bot's message
-  final botMessageIndex = _messages.length;
+void showCustomSnackBar(BuildContext context, SnackBar snackBar) {
+  ScaffoldMessenger.of(context).showSnackBar(snackBar);
+}
 
+Future<void> _sendChatbotMessage(String conversationID, String userMessage) async {
+    final botMessageIndex = _messages.length;
   setState(() {
     _messages.add({
       'sender': 'Bot',
@@ -393,23 +400,25 @@ Future<void> _sendChatbotMessage(String conversationID, String userMessage) asyn
   });
 
   try {
-    // Use the FirestoreChatbotService to prepare a detailed prompt with user-specific context
-    String enhancedPrompt =
-        await _firestoreChatbotService.preparePromptForCloudflare(userMessage, widget.userID);
+    String enhancedPrompt = await _firestoreChatbotService.preparePromptForCloudflare(userMessage, widget.userID);
 
-    // Fetch response from Cloudflare AI
+    // Handle reminder requests if applicable
+    String reminderResponse = await _firestoreChatbotService.handleAddReminderRequest(userMessage, context, widget.userID);
+    if (reminderResponse != null && reminderResponse.contains("Tap 'Add Reminder'")) {
+      // No need to process responseStream here, as reminder is handled
+      return; // Early exit if reminder is shown
+    }
+
     final responseStream = await _fetchResponseFromCloudflareStreaming(enhancedPrompt);
-    String fullResponse = '';
 
-    // Listen to the streaming response and update the bot's message dynamically
+    String fullResponse = '';
     await for (var chunk in responseStream) {
       fullResponse += chunk;
       setState(() {
         _messages[botMessageIndex]['message'] = fullResponse;
       });
     }
-
-    // Save the bot's response to Firestore
+    // Save the response to Firestore
     await _firestore.collection('ChatbotResponses').add({
       'conversationID': conversationID,
       'chatbotID': chatID,
@@ -418,7 +427,6 @@ Future<void> _sendChatbotMessage(String conversationID, String userMessage) asyn
       'timestamp': FieldValue.serverTimestamp(),
     });
   } catch (e) {
-    // Handle errors gracefully and update the bot's message with an error notification
     setState(() {
       _messages[botMessageIndex]['message'] = 'Error: $e';
     });
@@ -426,7 +434,6 @@ Future<void> _sendChatbotMessage(String conversationID, String userMessage) asyn
   }
 }
 
-  
   Widget _buildVoiceButton() {
   return SizedBox(
     width: 70,
@@ -468,8 +475,28 @@ ScrollController _scrollController = ScrollController();
  @override
 Widget build(BuildContext context) {
   return Scaffold(
+    key: _scaffoldKey,
     appBar: AppBar(
       title: const Text('Chat with Bot'),
+      actions: [
+        IconButton(
+          icon: Icon(Icons.add_alert),
+          tooltip: 'Add Reminder',
+          onPressed: () {
+            // Check if currentUserName has been fetched and is not empty
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => HelpAddReminderScreen(
+                  userID: widget.userID,
+                  name: currentUserName.isNotEmpty ? currentUserName : 'User', // Use the fetched name
+                ),
+              ),
+            );
+          }
+          
+        ),
+      ],
     ),
     body: Column(
       children: [
