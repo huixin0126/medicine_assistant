@@ -87,13 +87,13 @@ void initState() {
       // Fetch senior names
       QuerySnapshot userSnapshot = await _usersCollection.get();
       _seniorNames = userSnapshot.docs
-          .map((doc) => doc['Name'].toString().toLowerCase())
+          .map((doc) => doc['name'].toString().toLowerCase())
           .toList();
 
       // Fetch medicine names
       QuerySnapshot medicineSnapshot = await _medicineCollection.get();
       _medicineNames = medicineSnapshot.docs
-          .map((doc) => doc['Name'].toString().toLowerCase())
+          .map((doc) => doc['name'].toString().toLowerCase())
           .toList();
     } catch (e) {
       print("Error fetching names: $e");
@@ -216,13 +216,13 @@ Future<String> _getAnswerFromFirebase(String question) async {
 
     // Define possible keywords for each field, including medicine
     final fieldKeywords = {
-      'PhoneNo': {'phone', 'number', 'telephone', 'mobile', 'contact'},
-      'Time': {'time', 'schedule', 'timing', 'what time', 'when'},
-      'Date': {'date', 'day', 'which date', 'schedule', 'when'},
-      'Status': {'status', 'state', 'condition', 'progress', 'completed'},
-      'Dose': {'dose'},
-      'Dosage': {'dosage', 'amount', 'quantity', 'how many', 'how much'},
-      'Medicine': {'medicine', 'take'} // Added new keywords for 'medicine'
+      'phoneNo': {'phone', 'number', 'telephone', 'mobile', 'contact'},
+      'time': {'time', 'schedule', 'timing', 'what time', 'when'},
+      'date': {'date', 'day', 'which date', 'schedule', 'when'},
+      'status': {'status', 'state', 'condition', 'progress', 'completed'},
+      'dose': {'dose'},
+      'dosage': {'dosage', 'amount', 'quantity', 'how many', 'how much'},
+      'medicine': {'medicine', 'take'} // Added new keywords for 'medicine'
     };
 
     // Dynamically fetch senior names and medicine names from Firestore
@@ -239,7 +239,7 @@ Future<String> _getAnswerFromFirebase(String question) async {
       if (seniorName != null && medicineName != null) {
         // Fetch the Senior's ID from the database
         QuerySnapshot userSnapshot = await _usersCollection
-            .where('Name', isEqualTo: seniorName)
+            .where('name', isEqualTo: seniorName)
             .get();
         
         if (userSnapshot.docs.isNotEmpty) {
@@ -252,7 +252,7 @@ Future<String> _getAnswerFromFirebase(String question) async {
 
           if (medicineSnapshot.docs.isNotEmpty) {
             List<String> medicines = medicineSnapshot.docs
-                .map((doc) => doc['Name'].toString())
+                .map((doc) => doc['name'].toString())
                 .toList();
             return "${seniorName} will take the following medicines: ${medicines.join(', ')}.";
           } else {
@@ -267,41 +267,41 @@ Future<String> _getAnswerFromFirebase(String question) async {
     }
 
     // Handle specific fields
-    if (field == 'PhoneNo' && seniorName != null) {
+    if (field == 'phoneNo' && seniorName != null) {
       // Fetch senior's phone number
       QuerySnapshot userSnapshot = await _usersCollection
-          .where('Name', isEqualTo: seniorName)
+          .where('name', isEqualTo: seniorName)
           .get();
 
       if (userSnapshot.docs.isNotEmpty) {
-        String phoneNo = userSnapshot.docs.first['PhoneNo'];
+        String phoneNo = userSnapshot.docs.first['phoneNo'];
         return "$seniorName's phone number is $phoneNo.";
       }
     } 
 
     // Handle medicine-related queries (like dose, status, time, date, dosage)
     if (medicineName != null) {
-      if (field == 'Dose') {
+      if (field == 'dose') {
         // Fetch the medicine dose
         QuerySnapshot medicineSnapshot = await _medicineCollection
-            .where('Name', isEqualTo: medicineName)
+            .where('name', isEqualTo: medicineName)
             .get();
 
         if (medicineSnapshot.docs.isNotEmpty) {
-          String dose = medicineSnapshot.docs.first['Dose'];
+          String dose = medicineSnapshot.docs.first['dose'];
           return "The dose for $medicineName is $dose.";
         }
-      } else if ((field == 'Status' || field == 'Time' || field == 'Date') &&
+      } else if ((field == 'status' || field == 'time' || field == 'date') &&
           seniorName != null) {
         // Fetch reminder information
         QuerySnapshot userSnapshot = await _usersCollection
-            .where('Name', isEqualTo: seniorName)
+            .where('name', isEqualTo: seniorName)
             .get();
 
         if (userSnapshot.docs.isNotEmpty) {
           String seniorId = userSnapshot.docs.first['SeniorID'];
           QuerySnapshot medicineSnapshot = await _medicineCollection
-              .where('Name', isEqualTo: medicineName)
+              .where('name', isEqualTo: medicineName)
               .where('SeniorID', isEqualTo: seniorId)
               .get();
 
@@ -314,7 +314,7 @@ Future<String> _getAnswerFromFirebase(String question) async {
 
             if (reminderSnapshot.docs.isNotEmpty) {
               var reminderData = reminderSnapshot.docs.first;
-              if (field == 'Status') {
+              if (field == 'status') {
                 return "The status for $seniorName taking $medicineName is: ${reminderData['Status']}.";  
               } else if (field == 'Time') {
                 return "The time for $medicineName reminder is: ${reminderData['Time']}.";
@@ -324,16 +324,16 @@ Future<String> _getAnswerFromFirebase(String question) async {
             }
           }
         }
-      } else if (field == 'Dosage' && seniorName != null) {
+      } else if (field == 'dosage' && seniorName != null) {
         // Fetch dosage information
         QuerySnapshot userSnapshot = await _usersCollection
-            .where('Name', isEqualTo: seniorName)
+            .where('name', isEqualTo: seniorName)
             .get();
 
         if (userSnapshot.docs.isNotEmpty) {
           String seniorId = userSnapshot.docs.first['SeniorID'];
           QuerySnapshot medicineSnapshot = await _medicineCollection
-              .where('Name', isEqualTo: medicineName)
+              .where('name', isEqualTo: medicineName)
               .where('SeniorID', isEqualTo: seniorId)
               .get();
 
@@ -345,7 +345,7 @@ Future<String> _getAnswerFromFirebase(String question) async {
                 .get();
 
             if (reminderSnapshot.docs.isNotEmpty) {
-              String dosage = reminderSnapshot.docs.first['Dosage'];
+              String dosage = reminderSnapshot.docs.first['dosage'];
               return "The dosage for $seniorName to take $medicineName is $dosage.";
             }
           }

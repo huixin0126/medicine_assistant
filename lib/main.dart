@@ -1,30 +1,29 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:medicine_assistant_app/firebase_options.dart';
 import 'package:medicine_assistant_app/page/home.dart';
-import 'package:medicine_assistant_app/page/chatbot.dart';
-import 'package:medicine_assistant_app/page/chat.dart';
-import 'package:medicine_assistant_app/page/chatbotapi.dart';
-import 'package:medicine_assistant_app/page/chatlist.dart';
-import 'package:medicine_assistant_app/page/reminder.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:vibration/vibration.dart';
+import 'package:medicine_assistant_app/page/login.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
-import 'package:flutter_vibrate/flutter_vibrate.dart';
+import 'package:telephony/telephony.dart';
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized(); // Ensure bindings are initialized
+  WidgetsFlutterBinding.ensureInitialized(); // Ensure widgets are initialized
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform); // Initialize Firebase
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-);
+  // Request permissions for phone and SMS
+  await Telephony.instance.requestPhoneAndSmsPermissions;
 
-// Initialize Awesome Notifications
+  // Initialize Firebase Messaging and retrieve device token
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+  String? deviceToken = await messaging.getToken();
+  debugPrint('Device Token: $deviceToken'); // Log the token for debugging
+
+  // Initialize Awesome Notifications
   await AwesomeNotifications().initialize(
-    'resource://drawable/white_notification', // Notification icon (add a suitable icon to your project)
+    'resource://drawable/white_notification', // Notification icon (ensure the icon is in your resources)
     [
       NotificationChannel(
         channelKey: 'medicine_reminder',
@@ -43,21 +42,10 @@ Future<void> main() async {
     debug: true,
   );
 
-  // Check and request notification permissions for Android 13+
-  if (await AwesomeNotifications().isNotificationAllowed() == false) {
-    AwesomeNotifications().requestPermissionToSendNotifications();
+  // Request notification permissions
+  if (!await AwesomeNotifications().isNotificationAllowed()) {
+    await AwesomeNotifications().requestPermissionToSendNotifications();
   }
-
-// await AwesomeNotifications().createNotification(
-//   content: NotificationContent(
-//     id: 1,
-//     channelKey: 'medicine_reminder',
-//     title: 'Test Notification',
-//     body: 'This is a test.',
-//     notificationLayout: NotificationLayout.Default,
-//     customSound: 'resource://raw/res_ringtone',
-//   ),
-// );
 
   runApp(const MyApp());
 }
@@ -67,8 +55,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const String userID = '1'; // Set the userID as "2"
-
     return MaterialApp(
       scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'Medicine Assistant',
@@ -76,7 +62,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const HomePage(userID: userID),// Pass userID to the screen
+      home: LoginPage(), // Default screen (login page)
     );
   }
 }

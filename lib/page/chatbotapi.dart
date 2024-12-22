@@ -567,10 +567,10 @@ Widget build(BuildContext context) {
                       ),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.image),
-                    onPressed: _pickImage, // Open image picker
-                  ),
+                  // IconButton(
+                  //   icon: const Icon(Icons.image),
+                  //   onPressed: _pickImage, // Open image picker
+                  // ),
                   IconButton(
                     icon: const Icon(Icons.send),
                     onPressed: () => _sendMessage(_messageController.text),

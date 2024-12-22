@@ -53,6 +53,87 @@ class _ChatListPageState extends State<ChatListPage> {
     }
   }
 
+// Future<List<Map<String, dynamic>>> _fetchConnectedUsers(String userId) async {
+//   try {
+//     // Fetch the current user's document
+//     DocumentSnapshot userSnapshot = await _firestore.collection('User').doc(userId).get();
+
+//     if (!userSnapshot.exists) {
+//       print("User document not found");
+//       return [];
+//     }
+
+//     // Combine guardian and senior IDs, defaulting to empty lists if null
+//     List<dynamic> connectedUsers = [
+//       ...(userSnapshot['guardianIDs'] ?? []),
+//       ...(userSnapshot['seniorIDs'] ?? []),
+//     ];
+
+//     List<Map<String, dynamic>> users = [];
+
+//     for (var connectedUserRef in connectedUsers) {
+//       if (connectedUserRef == null || (connectedUserRef is String && connectedUserRef.isEmpty)) {
+//         print("Skipping invalid connected user reference: $connectedUserRef");
+//         continue; // Skip invalid references
+//       }
+
+//       try {
+//         // Resolve connected user references
+//         DocumentReference connectedUserDocRef = connectedUserRef is String
+//             ? _firestore.collection('User').doc(connectedUserRef)
+//             : connectedUserRef as DocumentReference;
+
+//         // Fetch the connected user's document
+//         DocumentSnapshot connectedUserSnapshot = await connectedUserDocRef.get();
+
+//         if (connectedUserSnapshot.exists) {
+//           String connectedUserID = connectedUserSnapshot.id;
+
+//           // Check for an existing chat session where both users are participants
+//           String? chatID = await ChatService().getExistingChatSession(userId, connectedUserID);
+
+//           // Validate the chat session participants
+//           if (chatID != null) {
+//             DocumentSnapshot chatSessionSnapshot = await _firestore.collection('ChatSession').doc(chatID).get();
+
+//             if (chatSessionSnapshot.exists) {
+//               List<dynamic> participants = chatSessionSnapshot['participants'] ?? [];
+//               if (!participants.contains(userId) || !participants.contains(connectedUserID)) {
+//                 chatID = null; // Reset chatID if the participants are incorrect
+//               }
+//             }
+//           }
+
+//           // Add the connected user's details along with the chat ID (if valid)
+//           users.add({
+//             'userID': connectedUserID,
+//             'userName': connectedUserSnapshot['name'] ?? 'Unknown User',
+//             'userAvatar': connectedUserSnapshot['avatar'] ?? '',
+//             'chatID': chatID ?? '', // Leave blank if no valid chat session
+//           });
+//         } else {
+//           print("Connected user document not found: ${connectedUserDocRef.id}");
+//         }
+//       } catch (e) {
+//         print("Error fetching connected user: $e");
+//       }
+//     }
+
+//     // Add chatbot details with a unique chatbot ID
+//     users.add({
+//       'userID': 'chatbot',
+//       'userName': 'Chatbot',
+//       'userAvatar': 'https://example.com/chatbot-avatar.png', // Replace with your chatbot avatar
+//       'chatID': '', // Leave blank as the chatbot session is dynamic
+//     });
+
+//     return users;
+//   } catch (e) {
+//     print("Error fetching connected users: $e");
+//     return [];
+//   }
+// }
+
 Future<List<Map<String, dynamic>>> _fetchConnectedUsers(String userId) async {
   try {
     // Fetch the current user's document
@@ -63,73 +144,61 @@ Future<List<Map<String, dynamic>>> _fetchConnectedUsers(String userId) async {
       return [];
     }
 
-    // Combine guardian and senior IDs, defaulting to empty lists if null
-    List<dynamic> connectedUsers = [
-      ...(userSnapshot['guardianIDs'] ?? []),
-      ...(userSnapshot['seniorIDs'] ?? []),
-    ];
+    Map<String, dynamic> userData = userSnapshot.data() as Map<String, dynamic>;
+    
+    // Get guardianIDs and seniorIDs arrays
+    List<String> guardianIDs = List<String>.from(userData['guardianIDs'] ?? []);
+    List<String> seniorIDs = List<String>.from(userData['seniorIDs'] ?? []);
 
+    // Combine both lists
+    List<String> connectedUsers = [...guardianIDs, ...seniorIDs];
     List<Map<String, dynamic>> users = [];
 
-    for (var connectedUserRef in connectedUsers) {
-      if (connectedUserRef == null || (connectedUserRef is String && connectedUserRef.isEmpty)) {
-        print("Skipping invalid connected user reference: $connectedUserRef");
-        continue; // Skip invalid references
-      }
-
+    for (String userRef in connectedUsers) {
       try {
-        // Resolve connected user references
-        DocumentReference connectedUserDocRef = connectedUserRef is String
-            ? _firestore.collection('User').doc(connectedUserRef)
-            : connectedUserRef as DocumentReference;
-
+        // Extract the actual user ID from the reference string
+        String connectedUserID = userRef.replaceAll('/User/', '');
+        
         // Fetch the connected user's document
-        DocumentSnapshot connectedUserSnapshot = await connectedUserDocRef.get();
+        DocumentSnapshot connectedUserSnapshot = await _firestore
+            .collection('User')
+            .doc(connectedUserID)
+            .get();
 
         if (connectedUserSnapshot.exists) {
-          String connectedUserID = connectedUserSnapshot.id;
+          Map<String, dynamic> connectedUserData = 
+              connectedUserSnapshot.data() as Map<String, dynamic>;
 
-          // Check for an existing chat session where both users are participants
-          String? chatID = await ChatService().getExistingChatSession(userId, connectedUserID);
+          // Get existing chat session
+          String? chatID = await ChatService().getExistingChatSession(
+            userId, 
+            connectedUserID
+          );
 
-          // Validate the chat session participants
-          if (chatID != null) {
-            DocumentSnapshot chatSessionSnapshot = await _firestore.collection('ChatSession').doc(chatID).get();
-
-            if (chatSessionSnapshot.exists) {
-              List<dynamic> participants = chatSessionSnapshot['participants'] ?? [];
-              if (!participants.contains(userId) || !participants.contains(connectedUserID)) {
-                chatID = null; // Reset chatID if the participants are incorrect
-              }
-            }
-          }
-
-          // Add the connected user's details along with the chat ID (if valid)
+          // Add user details to the list
           users.add({
             'userID': connectedUserID,
-            'userName': connectedUserSnapshot['name'] ?? 'Unknown User',
-            'userAvatar': connectedUserSnapshot['avatar'] ?? '',
-            'chatID': chatID ?? '', // Leave blank if no valid chat session
+            'userName': connectedUserData['name'] ?? 'Unknown User',
+            'userAvatar': connectedUserData['avatar'] ?? '',
+            'chatID': chatID ?? '', // Empty string if no chat exists
           });
-        } else {
-          print("Connected user document not found: ${connectedUserDocRef.id}");
         }
       } catch (e) {
-        print("Error fetching connected user: $e");
+        print("Error processing connected user reference: $e");
       }
     }
 
-    // Add chatbot details with a unique chatbot ID
+    // Add chatbot entry
     users.add({
       'userID': 'chatbot',
-      'userName': 'Chatbot',
-      'userAvatar': 'https://example.com/chatbot-avatar.png', // Replace with your chatbot avatar
-      'chatID': '', // Leave blank as the chatbot session is dynamic
+      'userName': 'Chatbot Assistant',
+      'userAvatar': 'assets/chatbot_avatar.png', // Update with your chatbot avatar
+      'chatID': '',
     });
 
     return users;
   } catch (e) {
-    print("Error fetching connected users: $e");
+    print("Error in _fetchConnectedUsers: $e");
     return [];
   }
 }
@@ -151,7 +220,7 @@ Future<List<Map<String, dynamic>>> _fetchConnectedUsers(String userId) async {
 
       if (querySnapshot.docs.isNotEmpty) {
         var messageData = querySnapshot.docs.first.data() as Map<String, dynamic>;
-        String message = messageData['textData'] ?? 'No message content';
+        String message = messageData['textData'] ?? 'Image';
         return message;
       }
 

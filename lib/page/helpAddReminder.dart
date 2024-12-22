@@ -42,6 +42,7 @@ class _HelpAddReminderScreen extends State<HelpAddReminderScreen> {
   final TextEditingController _nameController = TextEditingController();
   String? _selectedUserID;
   bool _isLoading = false;
+  bool _isAddingReminder = false;
 
   @override
   void initState() {
@@ -102,78 +103,80 @@ class _HelpAddReminderScreen extends State<HelpAddReminderScreen> {
       });
     }
   }
+Future<void> _findUserByName(String currentUserID) async {
+  setState(() {
+    _isLoading = true;
+  });
 
-  Future<void> _findUserByName(String currentUserID) async {
-    setState(() {
-      _isLoading = true;
-    });
+  try {
+    // Fetch the current user's document
+    DocumentSnapshot currentUserDoc = await _firestore.collection('User').doc(currentUserID).get();
 
-    try {
-      // Your async code to find the user.
-      DocumentSnapshot currentUserDoc = await _firestore
-          .collection('User')
-          .doc(currentUserID)
-          .get();
+    if (!currentUserDoc.exists) {
+      throw Exception("Current user not found.");
+    }
 
-      if (!currentUserDoc.exists) {
-        throw Exception("Current user not found.");
-      }
+    List<dynamic> seniorIDs = [];
+    final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
 
-      List<dynamic> seniorIDs = [];
-      final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
+    if (currentUserData != null) {
+      seniorIDs = currentUserData['seniorIDs'] ?? [];
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Current user data is not found.")),
+      );
+      return;
+    }
 
-      if (currentUserData != null) {
-        seniorIDs = currentUserData['seniorIDs'] ?? [];
-      } else {
-        // Handle the case where the document data is null.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Current user data is not found.")),
-        );
-        return;
-      }
+    print("Senior IDs: $seniorIDs");
 
-      String? foundUserID;
-      // Iterate through connected seniors
-      for (var seniorRef in seniorIDs) {
-        if (seniorRef is DocumentReference) {
-          DocumentSnapshot seniorDoc = await seniorRef.get();
-          final seniorData = seniorDoc.data() as Map<String, dynamic>?;
+    String? foundUserID;
 
-          if (seniorData != null) {
-            String seniorName = seniorData['name']?.toLowerCase() ?? '';
-            if (seniorName == _nameController.text.trim().toLowerCase()) {
-              foundUserID = seniorDoc.id;
-              break; // Stop once the matching user is found
-            }
+    for (var seniorRef in seniorIDs) {
+      if (seniorRef is String) {
+        DocumentReference seniorDocRef = _firestore.doc(seniorRef);
+        DocumentSnapshot seniorDoc = await seniorDocRef.get();
+        final seniorData = seniorDoc.data() as Map<String, dynamic>?;
+
+        print("Senior Data: $seniorData");
+
+        if (seniorData != null) {
+          String seniorName = seniorData['name']?.toLowerCase()?.trim() ?? '';
+          String enteredName = _nameController.text.trim().toLowerCase();
+
+          if (seniorName == enteredName) {
+            foundUserID = seniorDoc.id;
+            break;
           }
         }
       }
+    }
 
-      if (foundUserID != null) {
-        setState(() {
-          _selectedUserID = foundUserID;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("User found: ${_nameController.text}")),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("No connected user found with name: ${_nameController.text}")),
-        );
-        setState(() {
-          _selectedUserID = null;
-        });
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error finding user: $e")),
-      );
-    } finally {
+    if (foundUserID != null) {
       setState(() {
-        _isLoading = false;
+        _selectedUserID = foundUserID;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("User found: ${_nameController.text}")),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("No connected user found with name: ${_nameController.text}")),
+      );
+      setState(() {
+        _selectedUserID = null;
       });
     }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Error finding user: $e")),
+    );
+  } finally {
+    setState(() {
+      _isLoading = false;
+    });
   }
+}
 
   Future<void> _pickImage(ImageSource source) async {
     final XFile? image = await _picker.pickImage(source: source);
@@ -230,189 +233,205 @@ class _HelpAddReminderScreen extends State<HelpAddReminderScreen> {
   }
 
 Future<void> _addReminder() async {
-  if (_selectedUserID == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Please find and select a user first")),
-    );
-    return;
-  }
+    if (_selectedUserID == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Please find and select a user first")),
+      );
+      return;
+    }
 
-  if (_medicineName.isEmpty || _dose.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Please fill in Medicine Name and Dose")),
-    );
-    return;
-  }
+    if (_medicineName.isEmpty || _dose.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Please fill in Medicine Name and Dose")),
+      );
+      return;
+    }
 
-  final reminderTime = DateTime(
-    _selectedDate.year,
-    _selectedDate.month,
-    _selectedDate.day,
-    _selectedTime.hour,
-    _selectedTime.minute,
-  );
-
-  String? imageUrl = await _uploadImage();
-
-  try {
-    await _firestore.collection('Reminder').add({
-      'userID': _selectedUserID,
-      'name': _medicineName.toLowerCase(),
-      'dose': _dose,
-      'times': Timestamp.fromDate(reminderTime),
-      'mealTiming': _mealTiming,
-      'imageUrl': imageUrl,
-      'status': 'Active',
+    setState(() {
+      _isAddingReminder = true; // Set loading state to true
     });
 
-    // Show success message
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Reminder added successfully!"),
-        duration: Duration(seconds: 5),  // Specify duration here
-      ),
+    final reminderTime = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      _selectedTime.hour,
+      _selectedTime.minute,
     );
 
-    Navigator.pop(context); // Navigate back after adding the reminder
-  } catch (e) {
-    // Show error message if adding reminder fails
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Error adding reminder: $e"),
-      duration: Duration(seconds: 5),),
-    );
+    String? imageUrl = await _uploadImage();
+
+    try {
+      await _firestore.collection('Reminder').add({
+        'userID': _selectedUserID,
+        'name': _medicineName.toLowerCase(),
+        'dose': _dose,
+        'times': Timestamp.fromDate(reminderTime),
+        'mealTiming': _mealTiming,
+        'imageUrl': imageUrl,
+        'status': 'Active',
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Reminder added successfully!"),
+          duration: Duration(seconds: 5),
+        ),
+      );
+
+      Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error adding reminder: $e")),
+      );
+    } finally {
+      setState(() {
+        _isAddingReminder = false; // Reset loading state after completion
+      });
+    }
   }
-}
 
-
-   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text("Add Reminder"),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: "Senior's Name",
-                        border: OutlineInputBorder(),
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: AppBar(
+      title: Text("Add Reminder"),
+    ),
+    body: Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _nameController,
+                        decoration: InputDecoration(
+                          labelText: "Senior's Name",
+                          border: OutlineInputBorder(),
+                        ),
                       ),
                     ),
+                    IconButton(
+                      icon: _isLoading 
+                        ? CircularProgressIndicator() 
+                        : Icon(Icons.search),
+                      onPressed: () async {
+                        if (widget.userID != null) {
+                          await _findUserByName(widget.userID!); // Ensure widget.userID is not null
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text("User ID is null")),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                
+                // Show selected user ID if found
+                if (_selectedUserID != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Text(
+                      "Selected User ID: $_selectedUserID",
+                      style: TextStyle(color: Colors.green),
+                    ),
                   ),
-                  IconButton(
-                    icon: _isLoading 
-                      ? CircularProgressIndicator() 
-                      : Icon(Icons.search),
-                    onPressed: () async {
-                    if (widget.userID != null) {
-                        await _findUserByName(widget.userID!); // Ensure widget.userID is not null
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("User ID is null")),
-                        );
+                GestureDetector(
+                  onTap: _showImageSourceOptions,
+                  child: _medicineImage == null
+                      ? Container(
+                          height: 150,
+                          width: 150,
+                          color: Colors.grey[300],
+                          child: Icon(Icons.add_a_photo, size: 50),
+                        )
+                      : Image.file(
+                          _medicineImage!,
+                          height: 150,
+                          width: 150,
+                          fit: BoxFit.cover,
+                        ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  initialValue: _medicineName,
+                  decoration: InputDecoration(labelText: "Medicine Name"),
+                  onChanged: (value) => _medicineName = value,
+                ),
+                TextFormField(
+                  initialValue: _dose,
+                  decoration: InputDecoration(labelText: "Dose"),
+                  onChanged: (value) => _dose = value,
+                ),
+                ListTile(
+                  title: Text(
+                    "Date: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}",
+                  ),
+                  trailing: Icon(Icons.calendar_today),
+                  onTap: () async {
+                    DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: _selectedDate,
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _selectedDate = picked;
+                      });
                     }
                   },
-                  ),
-                ],
-              ),
-              
-              // Show selected user ID if found
-              if (_selectedUserID != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Text(
-                    "Selected User ID: $_selectedUserID",
-                    style: TextStyle(color: Colors.green),
-                  ),
                 ),
-              GestureDetector(
-                onTap: _showImageSourceOptions,
-                child: _medicineImage == null
-                    ? Container(
-                        height: 150,
-                        width: 150,
-                        color: Colors.grey[300],
-                        child: Icon(Icons.add_a_photo, size: 50),
-                      )
-                    : Image.file(
-                        _medicineImage!,
-                        height: 150,
-                        width: 150,
-                        fit: BoxFit.cover,
-                      ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                initialValue: _medicineName,
-                decoration: InputDecoration(labelText: "Medicine Name"),
-                onChanged: (value) => _medicineName = value,
-              ),
-              TextFormField(
-                initialValue: _dose,
-                decoration: InputDecoration(labelText: "Dose"),
-                onChanged: (value) => _dose = value,
-              ),
-              ListTile(
-                title: Text(
-                  "Date: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}",
+                ListTile(
+                  title: Text("Time: ${_selectedTime.format(context)}"),
+                  trailing: Icon(Icons.access_time),
+                  onTap: () async {
+                    TimeOfDay? picked = await showTimePicker(
+                      context: context,
+                      initialTime: _selectedTime,
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _selectedTime = picked;
+                      });
+                    }
+                  },
                 ),
-                trailing: Icon(Icons.calendar_today),
-                onTap: () async {
-                  DateTime? picked = await showDatePicker(
-                    context: context,
-                    initialDate: _selectedDate,
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime(2100),
-                  );
-                  if (picked != null) {
+                DropdownButton<String>(
+                  value: _mealTiming,
+                  items: ["Before meal", "After meal"]
+                      .map((timing) => DropdownMenuItem(value: timing, child: Text(timing)))
+                      .toList(),
+                  onChanged: (value) {
                     setState(() {
-                      _selectedDate = picked;
+                      _mealTiming = value!;
                     });
-                  }
-                },
-              ),
-              ListTile(
-                title: Text("Time: ${_selectedTime.format(context)}"),
-                trailing: Icon(Icons.access_time),
-                onTap: () async {
-                  TimeOfDay? picked = await showTimePicker(
-                    context: context,
-                    initialTime: _selectedTime,
-                  );
-                  if (picked != null) {
-                    setState(() {
-                      _selectedTime = picked;
-                    });
-                  }
-                },
-              ),
-              DropdownButton<String>(
-                value: _mealTiming,
-                items: ["Before meal", "After meal"]
-                    .map((timing) => DropdownMenuItem(value: timing, child: Text(timing)))
-                    .toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _mealTiming = value!;
-                  });
-                },
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                child: Text("Add Reminder"),
-                onPressed: _addReminder,
-              ),
-            ],
+                  },
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  child: Text("Add Reminder"),
+                  onPressed: _addReminder,
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+        
+        // Loading overlay
+        if (_isAddingReminder)
+          Container(
+            color: Colors.black.withOpacity(0.5),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+      ],
+    ),
+  );
+}
+
 }

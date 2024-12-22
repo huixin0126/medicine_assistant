@@ -8,6 +8,8 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+apply plugin: 'com.google.gms.google-services'
+
 android {
     namespace = "com.biti.medicine_assistant_app"
     compileSdk = flutter.compileSdkVersion
@@ -42,6 +44,12 @@ android {
     }
 }
 
+kotlin {
+    jvmToolchain {
+        languageVersion = JavaLanguageVersion.of(17) // Set the Kotlin compiler to Java 17
+    }
+}
+
 flutter {
     source = "../.."
 }
@@ -49,4 +57,8 @@ flutter {
 dependencies {
     implementation 'com.android.support:multidex:2.0.1'  
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    // implementation 'com.google.android.gms:play-services-base:18.0.0'  // or latest version
+    // implementation 'com.google.android.gms:play-services-location:18.0.0'  // if using location features
+    implementation 'com.google.firebase:firebase-auth:5.3.4'  // Update to the latest version
+  implementation 'com.google.firebase:firebase-messaging:15.1.6' // Latest version
 }

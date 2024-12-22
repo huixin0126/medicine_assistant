@@ -189,13 +189,13 @@ Future<void> loadReminders() async {
 
 Future<List<Map<String, dynamic>>> fetchReminders({bool onlyActive = false}) async {
   try {
+    // First, get all reminders for the user
     QuerySnapshot reminderSnapshot = await _firestore
         .collection('Reminder')
         .where('userID', isEqualTo: widget.userID)
         .get();
 
     if (reminderSnapshot.docs.isEmpty) {
-      // No reminders found
       setState(() {
         reminders = [];
         isLoading = false;
@@ -209,9 +209,11 @@ Future<List<Map<String, dynamic>>> fetchReminders({bool onlyActive = false}) asy
 
     for (var reminderDoc in reminderSnapshot.docs) {
       var reminderData = reminderDoc.data() as Map<String, dynamic>;
-
-      if (onlyActive && (reminderData['status'] ?? 'Active') != 'Active') {
-        continue;
+      
+      // Check the reminder status - Skip if we only want active reminders and this one isn't active
+      String status = reminderData['status'] ?? 'Active';
+      if (onlyActive && status != 'Active') {
+        continue; // Skip this reminder if it's not active
       }
 
       List<dynamic> timesList = [];
@@ -232,36 +234,38 @@ Future<List<Map<String, dynamic>>> fetchReminders({bool onlyActive = false}) asy
           })
           .toList();
 
-      if (futureTimes.isEmpty) {
-        continue;
-      }
-
-      futureTimes.sort((a, b) {
-        DateTime timeA = a is Timestamp ? a.toDate() : DateTime.parse(a.toString());
-        DateTime timeB = b is Timestamp ? b.toDate() : DateTime.parse(b.toString());
-        return timeA.compareTo(timeB);
-      });
-
+      // Only add reminders with valid times
       if (futureTimes.isNotEmpty) {
+        futureTimes.sort((a, b) {
+          DateTime timeA = a is Timestamp ? a.toDate() : DateTime.parse(a.toString());
+          DateTime timeB = b is Timestamp ? b.toDate() : DateTime.parse(b.toString());
+          return timeA.compareTo(timeB);
+        });
+
         final nextReminderTime = futureTimes.first is Timestamp
             ? futureTimes.first.toDate()
             : DateTime.parse(futureTimes.first.toString());
 
-        await scheduleReminderNotification(reminderDoc.id, reminderData['name'] ?? '', nextReminderTime);
-      }
+        await scheduleReminderNotification(
+          reminderDoc.id, 
+          reminderData['name'] ?? '', 
+          nextReminderTime
+        );
 
-      reminderList.add({
-        'reminderID': reminderDoc.id,
-        'name': reminderData['name'] ?? '',
-        'dosage': reminderData['dosage'] ?? '',
-        'dose': reminderData['dose'] ?? '',
-        'imageUrl': reminderData['imageUrl'] ?? '',
-        'mealTiming': reminderData['mealTiming'] ?? 'Before meal',
-        'times': futureTimes,
-        'status': reminderData['status'] ?? 'Active',
-      });
+        reminderList.add({
+          'reminderID': reminderDoc.id,
+          'name': reminderData['name'] ?? '',
+          'dosage': reminderData['dosage'] ?? '',
+          'dose': reminderData['dose'] ?? '',
+          'imageUrl': reminderData['imageUrl'] ?? '',
+          'mealTiming': reminderData['mealTiming'] ?? 'Before meal',
+          'times': futureTimes,
+          'status': status, // Make sure to include the status
+        });
+      }
     }
 
+    // Sort reminders by time
     reminderList.sort((a, b) {
       DateTime timeA = a['times'].first is Timestamp
           ? a['times'].first.toDate()
@@ -463,7 +467,9 @@ Future<void> vibrateOnAction() async {
                                   onComplete: () async {
                                     await onCompleteReminder(
                                         reminder['reminderID']);
-                                  },
+                                  }, onReload: () async { 
+                                    await loadReminders();
+                                   },
                                 );
                               },
                             ),
@@ -481,7 +487,7 @@ Future<void> vibrateOnAction() async {
               builder: (context) => AddReminderScreen(userID: widget.userID),
             ),
           );
-          await fetchReminders(); // Reload reminders after returning
+          await fetchReminders(onlyActive: true); // Reload reminders after returning
         },
         child: const Icon(Icons.add),
       ),
@@ -496,9 +502,10 @@ class ReminderCard extends StatelessWidget {
   final String imageUrl;
   final String mealTiming;
   final List<dynamic> times;
-  final String reminderID; // Add reminderID for identification
-  final String userID;     // Add userID for linking with guardians
+  final String reminderID;
+  final String userID;
   final VoidCallback onComplete;
+  final VoidCallback onReload; // Add reload callback
 
   const ReminderCard({
     Key? key,
@@ -511,16 +518,74 @@ class ReminderCard extends StatelessWidget {
     required this.reminderID,
     required this.userID,
     required this.onComplete,
+    required this.onReload, // Add to constructor
   }) : super(key: key);
+
+  Future<void> _showDeleteConfirmation(BuildContext context) async {
+    return showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Reminder'),
+          content: Text('Are you sure you want to delete the reminder for $name?'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () async {
+                try {
+                  // Delete the reminder from Firestore
+                  await FirebaseFirestore.instance
+                      .collection('Reminder')
+                      .doc(reminderID)
+                      .delete();
+                  
+                  // Cancel the notification
+                  await AwesomeNotifications().cancel(reminderID.hashCode);
+                  
+                  Navigator.of(context).pop();
+                  
+                  // Call reload callback after successful deletion
+                  onReload();
+                  
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Reminder deleted successfully'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  Navigator.of(context).pop();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Error deleting reminder'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Get today's date without time
+    // Rest of the build method remains the same
     final DateTime today = DateTime.now();
     final DateTime startOfTomorrow = DateTime(today.year, today.month, today.day).add(const Duration(days: 1));
 
-
-    // Filter to check if any times are for today
     bool isForToday = times.any((time) {
       DateTime reminderDateTime;
       if (time is Timestamp) {
@@ -528,99 +593,113 @@ class ReminderCard extends StatelessWidget {
       } else {
         reminderDateTime = DateTime.parse(time.toString());
       }
-      // Compare only the date part
-      return 
-          reminderDateTime.isBefore(startOfTomorrow);
+      return reminderDateTime.isBefore(startOfTomorrow);
     });
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (imageUrl.isNotEmpty)
-                  Image.network(
-                    imageUrl,
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Icon(Icons.medication);
-                    },
-                  ),
-                const SizedBox(width: 12),
-                Text(
-                  name,
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (dosage.isNotEmpty)
-              Text(
-                'Dosage: $dosage',
-                style: TextStyle(fontSize: 16),
-              ),
-            if (dose.isNotEmpty)
-              Text(
-                'Dose: $dose',
-                style: TextStyle(fontSize: 16),
-              ),
-            Text(
-              'Timing: $mealTiming',
-              style: TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            if (times.isNotEmpty) ...[
-              const Text(
-                'Reminders:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-              ...times.map((time) {
-                DateTime reminderDateTime;
-                if (time is Timestamp) {
-                  reminderDateTime = time.toDate();
-                } else {
-                  reminderDateTime = DateTime.parse(time.toString());
-                }
-                return Text(
-                  '- ${DateFormat('yyyy-MM-dd HH:mm').format(reminderDateTime)}',
-                  style: TextStyle(fontSize: 16),
-                );
-              }),
-            ],
-            const SizedBox(height: 12),
-            if (isForToday) // Display the "Done" button only for reminders today
-              Align(
-                alignment: Alignment.bottomRight,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => CameraPage(
-                          reminderID: reminderID,
-                          userID: userID,
-                          medicineName: name,
+                Row(
+                  children: [
+                    if (imageUrl.isNotEmpty)
+                      Image.network(
+                        imageUrl,
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(Icons.medication);
+                        },
+                      ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    );
-
-                    onComplete();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    foregroundColor: Colors.white, backgroundColor: Colors.purple, // Text color
-                  ),
-                  child: const Text('Done'),
+                    ),
+                  ],
                 ),
-              ),
-          ],
-        ),
+                const SizedBox(height: 8),
+                if (dosage.isNotEmpty)
+                  Text(
+                    'Dosage: $dosage',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                if (dose.isNotEmpty)
+                  Text(
+                    'Dose: $dose',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                Text(
+                  'Timing: $mealTiming',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                if (times.isNotEmpty) ...[
+                  const Text(
+                    'Reminders:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                  ...times.map((time) {
+                    DateTime reminderDateTime;
+                    if (time is Timestamp) {
+                      reminderDateTime = time.toDate();
+                    } else {
+                      reminderDateTime = DateTime.parse(time.toString());
+                    }
+                    return Text(
+                      '- ${DateFormat('yyyy-MM-dd HH:mm').format(reminderDateTime)}',
+                      style: const TextStyle(fontSize: 16),
+                    );
+                  }),
+                ],
+                const SizedBox(height: 12),
+                if (isForToday)
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CameraPage(
+                              reminderID: reminderID,
+                              userID: userID,
+                              medicineName: name,
+                            ),
+                          ),
+                        );
+                        onComplete();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.purple,
+                      ),
+                      child: const Text('Done'),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: IconButton(
+              icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+              onPressed: () => _showDeleteConfirmation(context),
+            ),
+          ),
+        ],
       ),
     );
   }

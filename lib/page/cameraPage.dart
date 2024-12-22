@@ -25,6 +25,7 @@ class _CameraPageState extends State<CameraPage> {
   final ImagePicker _picker = ImagePicker();
   File? _image;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  bool _isLoading = false;
 
   Future<void> captureImage() async {
     final XFile? image = await _picker.pickImage(source: ImageSource.camera);
@@ -35,17 +36,43 @@ class _CameraPageState extends State<CameraPage> {
     }
   }
 
-Future<void> saveImageAndSendMessage() async {
-  try {
-    if (_image == null) return;
+  Future<void> saveImageAndSendMessage() async {
+  setState(() {
+    _isLoading = true;
+  });
 
+  try {
+    // Check if the image is null
+    if (_image == null) {
+      // Show an alert dialog if no image is captured
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('No Image Captured'),
+            content: const Text('Please capture an image before proceeding.'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Close the dialog
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
+    // Proceed with saving the image and sending the message as usual
     // Create the file path for the image in Firebase Storage
     final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
     final imagePath = 'medicine_complete/${widget.userID}/$timestamp.jpg';
     final storageRef = FirebaseStorage.instance.ref().child(imagePath);
 
     // Upload the image to Firebase Storage
-    final uploadTask = await storageRef.putFile(_image!);
+    await storageRef.putFile(_image!);
 
     // Get the downloadable URL
     final downloadURL = await storageRef.getDownloadURL();
@@ -126,39 +153,55 @@ Future<void> saveImageAndSendMessage() async {
     Navigator.pop(context);
   } catch (e) {
     print('Error saving image or sending message: $e');
+  } finally {
+    setState(() {
+      _isLoading = false;
+    });
   }
 }
 
-// Helper function to generate a random ID
-String _generateRandomID(int length) {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  final rand = Random();
-  return List.generate(length, (index) => chars[rand.nextInt(chars.length)]).join();
-}
+
+  // Helper function to generate a random ID
+  String _generateRandomID(int length) {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rand = Random();
+    return List.generate(length, (index) => chars[rand.nextInt(chars.length)]).join();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Capture Medicine Image')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _image == null
-                ? const Text('No image captured.')
-                : Image.file(_image!, height: 300, width: 300),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: captureImage,
-              child: const Text('Capture Image'),
+      body: Stack(
+        children: [
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _image == null
+                    ? const Text('No image captured.')
+                    : Image.file(_image!, height: 300, width: 300),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: captureImage,
+                  child: const Text('Capture Image'),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: saveImageAndSendMessage,
+                  child: const Text('OK'),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: saveImageAndSendMessage,
-              child: const Text('OK'),
+          ),
+          if (_isLoading)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

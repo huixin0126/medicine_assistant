@@ -8,10 +8,15 @@ class FirestoreChatbotService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Medicine Information Database (Hardcoded for medicines not in Firestore)
-  final Map<String, Map<String, dynamic>> _medicineDatabase = {
+ final Map<String, Map<String, dynamic>> _medicineDatabase = {
     'paracetamol': {
       'generic_name': 'Acetaminophen',
       'usage': 'Used to treat mild to moderate pain and reduce fever. It helps relieve conditions such as headaches, muscle aches, arthritis, backaches, toothaches, colds, and menstrual cramps.',
+      'dosage': {
+        'adults': '500-1000 mg every 4-6 hours as needed (maximum 4000 mg per day)',
+        'children': 'Based on age and weight - consult healthcare provider',
+        'form': ['Tablets', 'Capsules', 'Liquid', 'Suppositories']
+      },
       'side_effects': [
         'Nausea',
         'Stomach pain',
@@ -23,11 +28,23 @@ class FirestoreChatbotService {
         'Do not exceed recommended dosage',
         'Avoid alcohol while taking this medication',
         'Consult a doctor if symptoms persist'
-      ]
+      ],
+      'contraindications': [
+        'Liver disease',
+        'Heavy alcohol use',
+        'Allergic to acetaminophen'
+      ],
+      'storage': 'Store at room temperature away from moisture and heat',
+      'pregnancy_category': 'Generally considered safe during pregnancy when used as directed'
     },
     'ibuprofen': {
       'generic_name': 'Ibuprofen',
       'usage': 'A nonsteroidal anti-inflammatory drug (NSAID) used to reduce pain, fever, and inflammation. Commonly used for headaches, muscle aches, arthritis, menstrual cramps, and minor injuries.',
+      'dosage': {
+        'adults': '200-400 mg every 4-6 hours as needed (maximum 1200 mg per day)',
+        'children': 'Based on age and weight - consult healthcare provider',
+        'form': ['Tablets', 'Capsules', 'Liquid', 'Gel']
+      },
       'side_effects': [
         'Stomach upset or pain',
         'Nausea',
@@ -40,121 +57,135 @@ class FirestoreChatbotService {
         'May increase risk of heart attack or stroke',
         'Do not use for prolonged periods without medical supervision',
         'Avoid if you have a history of stomach ulcers'
-      ]
+      ],
+      'contraindications': [
+        'Heart disease',
+        'History of stomach ulcers',
+        'Third trimester of pregnancy',
+        'Aspirin-sensitive asthma'
+      ],
+      'storage': 'Store at room temperature away from moisture',
+      'pregnancy_category': 'Avoid during third trimester of pregnancy'
     }
   };
 
   // Fetch comprehensive user data including connected users and reminders
 Future<String> fetchUserData(String targetUserID) async {
-  String details = '';
-  try {
-    // Fetch primary user details
-    DocumentSnapshot userSnapshot = await _firestore
-        .collection('User')
-        .doc(targetUserID)
-        .get();
+    String details = '';
+    try {
+      DocumentSnapshot userSnapshot = await _firestore
+          .collection('User')
+          .doc(targetUserID)
+          .get();
 
-    if (userSnapshot.exists) {
-      // User Basic Information
-      details += '''
+      if (userSnapshot.exists) {
+        Map<String, dynamic> userData = userSnapshot.data() as Map<String, dynamic>;
+        
+        details += '''
 User Profile:
-- Name: ${userSnapshot['name'] ?? 'Unknown'}
-- Email: ${userSnapshot['email'] ?? 'Not provided'}
-- Phone: ${userSnapshot['phoneNo'] ?? 'Not provided'}
-- Emergency Contact: ${userSnapshot['emergencyContact'] ?? 'Not set'}
+- Name: ${userData['name'] ?? 'Unknown'}
+- Email: ${userData['email'] ?? 'Not provided'}
+- Phone: ${userData['phoneNo'] ?? 'Not provided'}
+- Emergency Contact: ${userData['emergencyContact'] ?? 'Not set'}
 ''';
 
-      // Fetch and add medicines for the user
-      details += await _fetchUserMedicineDetails(targetUserID);
-
-      // Fetch reminder details for the user
-      String reminderDetails = await fetchReminderDetails(targetUserID);
-      details += reminderDetails.isNotEmpty ? reminderDetails : "No reminders set.\n";
-
-      // Fetch connected users (seniors and guardians)
-      details += await _fetchConnectedUsersDetails(userSnapshot);
-    } else {
-      details = "No user found with the given ID.";
+        details += await _fetchUserMedicineDetails(targetUserID);
+        String reminderDetails = await fetchReminderDetails(targetUserID);
+        details += reminderDetails.isNotEmpty ? reminderDetails : "No reminders set.\n";
+        details += await _fetchConnectedUsersDetails(userData);
+      } else {
+        details = "No user found with the given ID.";
+      }
+    } catch (e) {
+      print("Error fetching data for user $targetUserID: $e");
+      details = "Error retrieving user information.";
     }
-  } catch (e) {
-    print("Error fetching data for user $targetUserID: $e");
-    details = "Error retrieving user information.";
+    return details;
   }
-  return details;
-}
-
+  
   // Fetch medicine details for a specific user
-Future<String> _fetchUserMedicineDetails(String userID) async {
-  String medicineDetails = '';
-  try {
-    // Fetch medicines for the user
-    QuerySnapshot medicineSnapshot = await _firestore
-        .collection('Medicine')
-        .where('seniorID', isEqualTo: _firestore.doc('/User/$userID'))
-        .get();
 
-    if (medicineSnapshot.docs.isNotEmpty) {
-      medicineDetails += "Medicines:\n";
-      for (var medDoc in medicineSnapshot.docs) {
-        String medicineName = medDoc['name']?.toLowerCase() ?? 'unknown';
-        
-        // Fetch corresponding reminder details for this medicine
-        // String reminderInfo = await fetchReminderDetails(userID);
 
-        // Get additional medicine information (hardcoded or from Firestore)
-        Map<String, dynamic>? medicineInfo = _getMedicineInformation(medicineName);
+  Future<String> _fetchUserMedicineDetails(String userID) async {
+    String medicineDetails = '';
+    try {
+      // Create a proper DocumentReference for the user
+      DocumentReference userRef = _firestore.collection('User').doc(userID);
+      
+      // Query medicines using the DocumentReference
+      QuerySnapshot medicineSnapshot = await _firestore
+          .collection('Medicine')
+          .where('seniorID', isEqualTo: userRef)
+          .get();
 
-        medicineDetails += '''
+      if (medicineSnapshot.docs.isNotEmpty) {
+        medicineDetails += "Medicines:\n";
+        for (var medDoc in medicineSnapshot.docs) {
+          Map<String, dynamic> medicineData = medDoc.data() as Map<String, dynamic>;
+          String medicineName = medicineData['name']?.toLowerCase() ?? 'unknown';
+          
+          Map<String, dynamic>? medicineInfo = _getMedicineInformation(medicineName);
+
+          medicineDetails += '''
   Medicine:
-  - Name: ${medDoc['name'] ?? 'Unknown'}
-  - Dosage: ${medDoc['dosage'] ?? 'Not specified'}
+  - Name: ${medicineData['name'] ?? 'Unknown'}
+  - Dosage: ${medicineData['dosage'] ?? 'Not specified'}
 
   ${medicineInfo != null ? _formatMedicineInfo(medicineInfo) : 'No additional medicine information available'}
 ''';
+        }
+      } else {
+        medicineDetails += "No medicines assigned.\n";
       }
-    } else {
-      medicineDetails += "No medicines assigned.\n";
+    } catch (e) {
+      print("Error fetching medicine details: $e");
+      medicineDetails += "Error retrieving medicine information.\n";
     }
-  } catch (e) {
-    print("Error fetching medicine details: $e");
-    medicineDetails += "Error retrieving medicine information.\n";
+    return medicineDetails;
   }
-  return medicineDetails;
-}
 
-
-  // Fetch details for connected users
-  Future<String> _fetchConnectedUsersDetails(DocumentSnapshot userSnapshot) async {
+  Future<String> _fetchConnectedUsersDetails(Map<String, dynamic> userData) async {
     String connectedUserDetails = '';
     
-    // Process Senior IDs
-    List<dynamic> seniorIDs = userSnapshot['seniorIDs'] ?? [];
-    List<dynamic> guardianIDs = userSnapshot['guardianIDs'] ?? [];
-    
-    if (seniorIDs.isNotEmpty || guardianIDs.isNotEmpty) {
-      connectedUserDetails += "\nConnected Users:\n";
+    try {
+      var seniorIDs = userData['seniorIDs'] ?? [];
+      var guardianIDs = userData['guardianIDs'] ?? [];
       
-      // Process Senior IDs
-      for (var seniorRef in seniorIDs) {
-        if (seniorRef != "") {
-          String seniorID = (seniorRef as DocumentReference).id;
-          connectedUserDetails += await _getFullConnectedUserDetails(seniorID, 'Senior');
+      if (seniorIDs.isNotEmpty || guardianIDs.isNotEmpty) {
+        connectedUserDetails += "\nConnected Users:\n";
+        
+        // Process Senior IDs
+        for (var seniorRef in seniorIDs) {
+          if (seniorRef is DocumentReference) {
+            String seniorID = seniorRef.id;
+            connectedUserDetails += await _getFullConnectedUserDetails(seniorID, 'Senior');
+          } else if (seniorRef is String && seniorRef.startsWith('/User/')) {
+            // Handle string path reference
+            String seniorID = seniorRef.split('/').last;
+            connectedUserDetails += await _getFullConnectedUserDetails(seniorID, 'Senior');
+          }
+        }
+        
+        // Process Guardian IDs
+        for (var guardianRef in guardianIDs) {
+          if (guardianRef is DocumentReference) {
+            String guardianID = guardianRef.id;
+            connectedUserDetails += await _getFullConnectedUserDetails(guardianID, 'Guardian');
+          } else if (guardianRef is String && guardianRef.startsWith('/User/')) {
+            // Handle string path reference
+            String guardianID = guardianRef.split('/').last;
+            connectedUserDetails += await _getFullConnectedUserDetails(guardianID, 'Guardian');
+          }
         }
       }
-      
-      // Process Guardian IDs
-      for (var guardianRef in guardianIDs) {
-        if (guardianRef != "") {
-          String guardianID = (guardianRef as DocumentReference).id;
-          connectedUserDetails += await _getFullConnectedUserDetails(guardianID, 'Guardian');
-        }
-      }
+    } catch (e) {
+      print("Error in _fetchConnectedUsersDetails: $e");
+      connectedUserDetails += "Error retrieving connected users.\n";
     }
     
     return connectedUserDetails;
   }
 
-  // Get full details for a connected user
   Future<String> _getFullConnectedUserDetails(String userID, String userType) async {
     String details = '';
     try {
@@ -164,15 +195,15 @@ Future<String> _fetchUserMedicineDetails(String userID) async {
           .get();
 
       if (connectedUserSnapshot.exists) {
+        Map<String, dynamic> userData = connectedUserSnapshot.data() as Map<String, dynamic>;
         details += '''
 $userType Details:
-- Name: ${connectedUserSnapshot['name'] ?? 'Unknown'}
-- Email: ${connectedUserSnapshot['email'] ?? 'Not provided'}
-- Phone: ${connectedUserSnapshot['phoneNo'] ?? 'Not provided'}
+- Name: ${userData['name'] ?? 'Unknown'}
+- Email: ${userData['email'] ?? 'Not provided'}
+- Phone: ${userData['phoneNo'] ?? 'Not provided'}
 ''';
         // Add medicines for connected user
         details += await _fetchUserMedicineDetails(userID);
-
         details += await fetchReminderDetails(userID);
       }
     } catch (e) {
@@ -340,14 +371,10 @@ Future<String> handleAddReminderRequest(String userMessage, BuildContext context
       return response;
     }
 
-    // Keywords to detect reminder requests
     List<String> keywords = ["set reminder", "add reminder", "make reminder"];
-
-    // Check if the message contains any of the keywords
     bool containsKeyword = keywords.any((keyword) => userMessage.toLowerCase().contains(keyword));
 
     if (containsKeyword) {
-      // Extract necessary details from the user message dynamically
       final nameMatch = RegExp(r"(?:for|to)\s+(.+?)(?:\s*(?:to|$))", caseSensitive: false).firstMatch(userMessage);
       final medicineMatch = RegExp(r"(?:eat|take)\s+(.+?)(?=\s*(?:at|dose|$))", caseSensitive: false).firstMatch(userMessage);
       final dateTimeMatch = RegExp(r"at\s+(.+?)(?=\s*(?:dose|before meals|after meals|$))", caseSensitive: false).firstMatch(userMessage);
@@ -362,33 +389,42 @@ Future<String> handleAddReminderRequest(String userMessage, BuildContext context
       final dose = doseMatch?.group(1)?.trim();
 
       if (name != null) {
-        // Query user by userID to get the user document
         DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
           .collection('User')
           .doc(currentUserID)
           .get();
 
         if (userSnapshot.exists) {
-          // Retrieve senior references (IDs) from the user document
-          final seniorReferences = List<DocumentReference>.from(userSnapshot['seniorIDs']);
+          // Get the senior IDs from the user document
+          final userData = userSnapshot.data() as Map<String, dynamic>;
+          final seniorIDs = userData['seniorIDs'] as List<dynamic>;
 
-          // Fetch senior names using senior references
-          for (DocumentReference seniorRef in seniorReferences) {
-            DocumentSnapshot seniorSnapshot = await seniorRef.get(); // Get the senior document using the reference
+          // Process each senior ID
+          for (var seniorRef in seniorIDs) {
+            String seniorID;
+            
+            // Handle different formats of senior references
+            if (seniorRef is String && seniorRef.startsWith('/User/')) {
+              // Handle string path format ('/User/xyz')
+              seniorID = seniorRef.split('/').last;
+            } else if (seniorRef is String) {
+              // Handle direct ID format
+              seniorID = seniorRef;
+            } else {
+              continue; // Skip invalid formats
+            }
+
+            // Get the senior's document
+            DocumentSnapshot seniorSnapshot = await FirebaseFirestore.instance
+                .collection('User')
+                .doc(seniorID)
+                .get();
 
             if (seniorSnapshot.exists) {
               String seniorName = seniorSnapshot['name'].toString().toLowerCase();
               _seniorNames.add(seniorName);
 
-              // If the name matches a senior name, display the SnackBar and capture the userID
               if (seniorName == name.toLowerCase()) {
-                final userID = seniorRef.id;  // Use seniorRef.id to get the userID
-
-                // ScaffoldMessenger.of(context).showSnackBar(
-                //   SnackBar(content: Text("User found: $seniorName")),
-                // );
-
-                // Proceed to show the reminder details if a valid userID is found
                 final displayMedicine = medicine ?? "";
                 final displayDose = dose ?? "";
                 final displayMealTiming = mealTiming ?? "Before meal";
@@ -398,11 +434,10 @@ Future<String> handleAddReminderRequest(String userMessage, BuildContext context
                   try {
                     reminderDateTime = DateFormat("yyyy-MM-dd HH:mm").parse(dateTimeInput);
                   } catch (_) {
-                    reminderDateTime = null; // Fallback if parsing fails
+                    reminderDateTime = null;
                   }
                 }
 
-                // Display the SnackBar with available information
                 if (context != null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -421,11 +456,11 @@ Future<String> handleAddReminderRequest(String userMessage, BuildContext context
                             context,
                             MaterialPageRoute(
                               builder: (context) => HelpAddReminderScreen(
-                                userID: userID, // Pass the correct userID
+                                userID: seniorID,
                                 name: name,
                                 medicine: displayMedicine,
                                 dose: displayDose,
-                                dateTime: reminderDateTime?.toIso8601String(), // Handle null date
+                                dateTime: reminderDateTime?.toIso8601String(),
                                 mealTiming: displayMealTiming,
                               ),
                             ),
@@ -438,12 +473,11 @@ Future<String> handleAddReminderRequest(String userMessage, BuildContext context
                 }
 
                 response = "Reminder detected. SnackBar displayed.";
-                break;  // Stop the loop after finding the first match
+                break;
               }
             }
           }
 
-          // If no matching senior found, provide feedback
           if (!_seniorNames.contains(name.toLowerCase())) {
             response = "No senior found with the name: $name. Please check the name or try again.";
           }
@@ -464,36 +498,92 @@ Future<String> handleAddReminderRequest(String userMessage, BuildContext context
   return response;
 }
 
-
   // Prepare prompt for AI with comprehensive user and medicine information
   Future<String> preparePromptForCloudflare(String userMessage, String userID) async {
     String userDetails = await fetchUserData(userID);
+    
+    // Extract potential medicine names from the user message
+    List<String> possibleMedicines = _extractPossibleMedicineNames(userMessage);
+    
+    // Build medicine information based on mentioned medicines
+    String medicineInfo = '';
+    for (String medicine in possibleMedicines) {
+      if (_medicineDatabase.containsKey(medicine.toLowerCase())) {
+        medicineInfo += _formatSpecificMedicineResponse(medicine.toLowerCase(), userMessage);
+      } else if (medicine.isNotEmpty) {
+        medicineInfo += _provideGeneralMedicineResponse(medicine, userMessage);
+      }
+    }
 
     String fullPrompt = """
 Contextual Information for AI Assistant:
 
 $userDetails
 
-Comprehensive Medicine Information Database:
-${_formatCompleteMedicineDatabase()}
+${medicineInfo.isNotEmpty ? 'Relevant Medicine Information:\n$medicineInfo' : ''}
 
 User Query: $userMessage
 
 AI Interaction Guidelines:
 1. Use the above contextual information to provide personalized and accurate responses.
-2. Reference specific user, medicine, and reminder details when relevant.
-3. For queries about medicines not in the user's profile, use the comprehensive medicine database.
-4. Provide detailed information about medicine usage, side effects, and warnings.
-5. If any requested information is not available, clearly explain the limitations.
-6. Ensure privacy and confidentiality while providing information.
-7. If the user asks to set a reminder, invoke the handleAddReminderRequest process to guide them through adding a new reminder.
+2. Reference specific user details and any existing reminders when relevant.
+3. If medicines are mentioned in the query:
+   - Provide specific information for known medicines
+   - Offer general guidance for unknown medicines
+   - Always emphasize the importance of consulting healthcare providers
+4. Respect user privacy and maintain confidentiality.
+5. For reminder requests, guide users through the reminder creation process.
+6. If information is unavailable, clearly explain limitations and suggest next steps.
 
-Please provide a helpful and contextually relevant response.
+Please provide a relevant and helpful response based on the available context.
 """;
 
     return fullPrompt;
   }
 
+  List<String> _extractPossibleMedicineNames(String message) {
+    Set<String> medicines = {};
+    
+    // Convert message to lowercase for case-insensitive matching
+    String normalizedMessage = message.toLowerCase();
+    
+    // Common keywords that might precede medicine names
+    List<String> medicineKeywords = [
+      'medicine',
+      'medication',
+      'tablet',
+      'pill',
+      'capsule',
+      'take',
+      'taking',
+      'prescribed',
+      'about',
+      'using'
+    ];
+
+    // Split message into words
+    List<String> words = normalizedMessage.split(' ');
+    
+    // Look for words that follow medicine-related keywords
+    for (int i = 0; i < words.length - 1; i++) {
+      if (medicineKeywords.contains(words[i])) {
+        // Add the next word as a potential medicine name
+        if (i + 1 < words.length) {
+          medicines.add(words[i + 1]);
+        }
+      }
+    }
+    
+    // Also check if any known medicine names from the database appear in the message
+    for (String knownMedicine in _medicineDatabase.keys) {
+      if (normalizedMessage.contains(knownMedicine)) {
+        medicines.add(knownMedicine);
+      }
+    }
+    
+    return medicines.toList();
+  }
+  
   // Format complete medicine database for prompt
   String _formatCompleteMedicineDatabase() {
     StringBuffer medicineInfo = StringBuffer();
@@ -508,5 +598,139 @@ Medicine: $name
 ''');
     });
     return medicineInfo.toString();
+  }
+
+  String provideMedicineResponse(String query) {
+    // Normalize query and extract medicine name
+    String normalizedQuery = query.toLowerCase();
+    String medicineName = _extractMedicineNameFromQuery(normalizedQuery);
+    
+    // If medicine exists in database, provide specific information
+    if (_medicineDatabase.containsKey(medicineName.toLowerCase())) {
+      return _formatSpecificMedicineResponse(medicineName.toLowerCase(), normalizedQuery);
+    } else {
+      // For unknown medicines, provide general medical guidance
+      return _provideGeneralMedicineResponse(medicineName, normalizedQuery);
+    }
+  }
+
+  String _extractMedicineNameFromQuery(String query) {
+    // Common patterns to identify medicine names in queries
+    List<String> patterns = [
+      'about',
+      'is',
+      'are',
+      'take',
+      'using',
+      'medicine',
+      'medication'
+    ];
+    
+    List<String> words = query.split(' ');
+    for (String pattern in patterns) {
+      int index = words.indexOf(pattern);
+      if (index != -1 && index < words.length - 1) {
+        return words[index + 1];
+      }
+    }
+    
+    // Default to first word that's not a common word
+    return words.firstWhere(
+      (word) => !['what', 'how', 'when', 'where', 'why', 'is', 'are', 'the', 'a', 'an'].contains(word),
+      orElse: () => 'medicine'
+    );
+  }
+
+  String _formatSpecificMedicineResponse(String medicineName, String query) {
+    var medicine = _medicineDatabase[medicineName]!;
+    
+    // Check query type and provide relevant information
+    if (query.contains('side effect') || query.contains('risk')) {
+      return '''
+${medicine['generic_name']} (${medicineName.toUpperCase()}) - Safety Information:
+
+Side Effects:
+${medicine['side_effects'].map((e) => '• $e').join('\n')}
+
+Warnings:
+${medicine['warnings'].map((e) => '• $e').join('\n')}
+
+Contraindications:
+${medicine['contraindications'].map((e) => '• $e').join('\n')}
+
+Pregnancy Category:
+${medicine['pregnancy_category']}
+
+Please consult your healthcare provider for personalized medical advice.
+''';
+    } else if (query.contains('dosage') || query.contains('how to take')) {
+      return '''
+${medicine['generic_name']} (${medicineName.toUpperCase()}) - Dosage Information:
+
+Adult Dosage:
+${medicine['dosage']['adults']}
+
+Available Forms:
+${medicine['dosage']['form'].map((e) => '• $e').join('\n')}
+
+Storage:
+${medicine['storage']}
+
+Note: These are general guidelines. Follow your healthcare provider's specific instructions.
+''';
+    } else {
+      return '''
+${medicine['generic_name']} (${medicineName.toUpperCase()}) - Complete Information:
+
+Usage:
+${medicine['usage']}
+
+Dosage:
+• Adults: ${medicine['dosage']['adults']}
+• Forms: ${medicine['dosage']['form'].join(', ')}
+
+Safety Information:
+• Side Effects: ${medicine['side_effects'].join(', ')}
+• Key Warnings: ${medicine['warnings'].join(', ')}
+
+Storage: ${medicine['storage']}
+
+Important: This information is for reference only. Consult your healthcare provider for personal medical advice.
+''';
+    }
+  }
+
+  String _provideGeneralMedicineResponse(String medicineName, String query) {
+    return '''
+Regarding $medicineName:
+
+While I don't have specific information about this medication in my database, here are some general guidelines:
+
+1. Always consult your healthcare provider or pharmacist for:
+   • Proper dosage information
+   • Potential side effects
+   • Drug interactions
+   • Usage instructions
+
+2. General Safety Tips:
+   • Follow prescribed dosage strictly
+   • Complete the full course as prescribed
+   • Store medications properly
+   • Check expiration dates
+   • Report any adverse effects to your healthcare provider
+
+3. Important Reminders:
+   • Keep a list of all your medications
+   • Inform your healthcare provider about any allergies
+   • Mention any other medications you're taking
+   • Discuss any chronic conditions you have
+
+For specific information about this medication, please:
+1. Consult your healthcare provider
+2. Read the medication package insert
+3. Speak with your pharmacist
+
+Note: This is general guidance only. Always seek professional medical advice for specific medication information.
+''';
   }
 }
