@@ -5,6 +5,7 @@ import 'package:medicine_assistant_app/page/indexhome.dart';
 import 'package:medicine_assistant_app/page/reminder.dart';
 import 'package:medicine_assistant_app/page/profil.dart';
 import 'package:medicine_assistant_app/class/user.dart';
+import 'package:medicine_assistant_app/page/recognize.dart';
 
 class HomePage extends StatefulWidget {
   final String userID;
@@ -25,7 +26,7 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _pages = [
       IndexHome(userID: widget.userID),
-      const Center(child: Text('Recognize Page')),
+      RecognizePage(userID: widget.userID),
       ChatListPage(userID: widget.userID),
       MedicationReminderScreen(userID: widget.userID),
       ProfilePage(userID: widget.userID, user: widget.user,),  // Assuming ProfilePage takes userID

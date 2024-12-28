@@ -102,6 +102,34 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
   //   Navigator.pop(context);
   // }
 
+  Future<void> saveMedicineIfNotExists({
+    required String userID,
+    required String name,
+    required String? imageData,
+  }) async {
+    try {
+      final medicineCollection = FirebaseFirestore.instance.collection('Medicine');
+      final querySnapshot = await medicineCollection
+          .where('userID', isEqualTo: userID)
+          .where('name', isEqualTo: name.toLowerCase())
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        await medicineCollection.add({
+          'userID': userID,
+          'name': name.toLowerCase(),
+          'imageData': imageData ?? '',
+        });
+        print('Medicine saved successfully.');
+      } else {
+        print('Medicine already exists.');
+      }
+    } catch (e) {
+      print('Error saving medicine: $e');
+      throw e;
+    }
+  }
+
   Future<void> _addReminder() async {
     if (_medicineName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -111,7 +139,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
     }
 
     setState(() {
-      _isLoading = true; // Start loading
+      _isLoading = true;
     });
 
     try {
@@ -123,8 +151,17 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
         _selectedTime.minute,
       );
 
+      // Upload the image and get the URL
       String? imageUrl = await _uploadImage();
 
+      // Save medicine if not already saved
+      await saveMedicineIfNotExists(
+        userID: widget.userID,
+        name: _medicineName,
+        imageData: imageUrl,
+      );
+
+      // Add reminder to Firestore
       await FirebaseFirestore.instance.collection('Reminder').add({
         'userID': widget.userID,
         'name': _medicineName.toLowerCase(),
@@ -140,9 +177,9 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
       }
     } catch (e) {
       setState(() {
-        _isLoading = false; // Stop loading on error
+        _isLoading = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error adding reminder: $e")),

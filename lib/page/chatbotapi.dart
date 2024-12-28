@@ -69,12 +69,14 @@ final FirestoreChatbotService _firestoreChatbotService = FirestoreChatbotService
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   return List.generate(10, (index) => characters[random.nextInt(characters.length)]).join();
 }
+  bool _isSpeechAvailable = false;  // Add this flag
+
 
 @override
 void initState() {
     super.initState();
     chatID = widget.chatID;
-    _speech = stt.SpeechToText();
+    _initializeSpeech();  // Add this method call
     _fetchUserName(widget.userID);
     _fetchNamesFromFirestore();
 
@@ -212,34 +214,66 @@ Future<void> _fetchUserName(String currentUserID) async {
     }
   }
 
-@override
+  @override
   void dispose() {
     _animationController.dispose();
     super.dispose();
   }
 
-Future<void> _startListening() async {
-    bool available = await _speech.initialize(
+
+ Future<void> _initializeSpeech() async {
+  _speech = stt.SpeechToText();
+  try {
+    _isSpeechAvailable = await _speech.initialize(
       onStatus: (status) {
         print('Speech status: $status');
-        if (status == 'notListening') {
+        if (status == 'notListening' && mounted) {
           setState(() => _isListening = false);
-          _animationController.stop(); // Stop the animation when done listening
+          _animationController.stop();
         }
       },
       onError: (errorNotification) {
         print('Speech error: $errorNotification');
-        setState(() => _isListening = false);
-        _animationController.stop(); // Stop on error
+        if (mounted) {
+          setState(() {
+            _isListening = false;
+            _isSpeechAvailable = false;
+          });
+          _animationController.stop();
+          _showSpeechError(errorNotification.errorMsg);
+        }
       },
     );
-
-    if (available) {
+  } catch (e) {
+    print('Speech initialization error: $e');
+    if (mounted) {
       setState(() {
-        _isListening = true;
+        _isSpeechAvailable = false;
       });
+      _showSpeechError('Speech recognition initialization failed');
+    }
+  }
+}
 
-      // Start the rotation animation, ensuring it completes the full duration
+  void _showSpeechError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Future<void> _startListening() async {
+    print('start');
+    if (!_isSpeechAvailable) {
+      _showSpeechError('Speech recognition is not available on this device');
+      return;
+    }
+
+    try {
+      setState(() => _isListening = true);
       _animationController.forward();
 
       await _speech.listen(
@@ -249,35 +283,78 @@ Future<void> _startListening() async {
             _messageController.text = _spokenText;
           });
         },
-        listenFor: Duration(seconds: 60), // Listen for exactly 60 seconds
+        listenFor: Duration(seconds: 60),
         partialResults: true,
         cancelOnError: true,
         listenMode: ListenMode.dictation,
       );
-    } else {
-      print('Speech recognition not available');
+
+      await Future.delayed(Duration(milliseconds: 500));
+
+      while ((_speech.isListening)) {
+        print('listen');
+
+        await Future.delayed(Duration(milliseconds: 500));
+      }
+      print('stop');
+      _stopListening();
+      
+    } catch (e) {
+      print('Error starting speech recognition: $e');
+      if (mounted) {
+      setState(() => _isListening = false);
+      _animationController.stop();
+      _showSpeechError('Failed to start speech recognition');
+    }
     }
   }
 
   void _stopListening() {
     if (_speech.isListening) {
       _speech.stop();
-      setState(() {
-        _isListening = false;
-      });
-
-      // Stop the rotation animation
-      _animationController.stop();
-      _animationController.reset();
-
-      Future.delayed(Duration(milliseconds: 500), () {
-        if (_spokenText.isNotEmpty) {
-          _sendMessage(_spokenText);
-          _spokenText = "";
-        }
-      });
     }
+
+    if(!_isListening)
+    {
+      return;
+    }
+    setState(() {
+      _isListening = false;
+    });
+    // Stop the rotation animation
+    _animationController.stop();
+    _animationController.reset();
+
+    Future.delayed(Duration(milliseconds: 500), () async {
+      if (_spokenText.isNotEmpty) {
+        // Send the spoken text as a message
+        await _sendMessage(_spokenText);
+        _spokenText = "";
+      }
+    });
+
+    print('stop2');
   }
+
+  // void _stopListening() {
+  //   if (_speech.isListening) {
+  //     _speech.stop();
+  //     setState(() {
+  //       _isListening = false;
+  //     });
+
+  //     // Stop the rotation animation
+  //     _animationController.stop();
+  //     _animationController.reset();
+
+  //     Future.delayed(Duration(milliseconds: 500), () {
+  //       if (_spokenText.isNotEmpty) {
+  //         _sendMessage(_spokenText);
+  //         _spokenText = "";
+  //       }
+  //     });
+  //   }
+  // }
 
   // Pick an image
   Future<void> _pickImage() async {
@@ -304,6 +381,8 @@ Future<void> _sendMessage(String message, {bool isFromChatbot = false}) async {
         'image': _image,
         'timestamp': FieldValue.serverTimestamp(),
       });
+      _messageController.text = "";
+      _spokenText = "";
     });
 
     // Clear the message input and reset the image
@@ -434,41 +513,44 @@ Future<void> _sendChatbotMessage(String conversationID, String userMessage) asyn
   }
 }
 
-  Widget _buildVoiceButton() {
-  return SizedBox(
-    width: 70,
-    height: 70,
-    child: Stack(
-      alignment: Alignment.center,
-      children: [
-        // Static microphone button
-        CircleAvatar(
-          radius: 30,
-          backgroundColor: _isListening ? Colors.red : Colors.blue,
-          child: const Icon(
-            Icons.mic,
-            color: Colors.white,
-            size: 25,
+   Widget _buildVoiceButton() {
+    return SizedBox(
+      width: 70,
+      height: 70,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CircleAvatar(
+            radius: 30,
+            backgroundColor: !_isSpeechAvailable
+                ? Colors.grey // Disabled state
+                : _isListening
+                    ? Colors.red
+                    : Colors.blue,
+            child: Icon(
+              Icons.mic,
+              color: _isSpeechAvailable ? Colors.white : Colors.black38,
+              size: 25,
+            ),
           ),
-        ),
-        // Rotating ring
-        if (_isListening)
-          AnimatedBuilder(
-            animation: _rotationAnimation,
-            builder: (context, child) {
-              return Transform.rotate(
-                angle: _rotationAnimation.value,
-                child: CustomPaint(
-                  size: const Size(70, 70),
-                  painter: RingPainter(angle: _rotationAnimation.value * 2 * pi),
-                ),
-              );
-            },
-          ),
-      ],
-    ),
-  );
-}
+          if (_isListening)
+            AnimatedBuilder(
+              animation: _rotationAnimation,
+              builder: (context, child) {
+                return Transform.rotate(
+                  angle: _rotationAnimation.value,
+                  child: CustomPaint(
+                    size: const Size(70, 70),
+                    painter:
+                        RingPainter(angle: _rotationAnimation.value * 2 * pi),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
 
 ScrollController _scrollController = ScrollController();
 
@@ -550,12 +632,12 @@ Widget build(BuildContext context) {
                 children: [
                   // Voice button for long press to start listening
                   GestureDetector(
-                    onLongPressStart: (details) {
-                      _startListening();
-                    },
-                    onLongPressEnd: (details) {
-                      _stopListening();
-                    },
+                    onLongPressStart: _isSpeechAvailable
+                          ? (details) => _startListening()
+                          : null,
+                    onLongPressEnd: _isSpeechAvailable
+                          ? (details) => _stopListening()
+                          : null,
                     child: _buildVoiceButton(),
                   ),
                   Expanded(

@@ -232,6 +232,35 @@ Future<void> _findUserByName(String currentUserID) async {
     }
   }
 
+  Future<void> saveMedicineIfNotExists({
+    required String? userID,
+    required String name,
+    required String? imageData,
+  }) async {
+    try {
+      final medicineCollection = FirebaseFirestore.instance.collection('Medicine');
+      final querySnapshot = await medicineCollection
+          .where('userID', isEqualTo: userID)
+          .where('name', isEqualTo: name.toLowerCase())
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        await medicineCollection.add({
+          'userID': userID,
+          'name': name.toLowerCase(),
+          'imageData': imageData ?? '',
+        });
+        print('Medicine saved successfully.');
+      } else {
+        print('Medicine already exists.');
+      }
+    } catch (e) {
+      print('Error saving medicine: $e');
+      throw e;
+    }
+  }
+
+
 Future<void> _addReminder() async {
     if (_selectedUserID == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -260,6 +289,13 @@ Future<void> _addReminder() async {
     );
 
     String? imageUrl = await _uploadImage();
+
+    // Save medicine if not already saved
+      await saveMedicineIfNotExists(
+        userID: _selectedUserID,
+        name: _medicineName,
+        imageData: imageUrl,
+      );
 
     try {
       await _firestore.collection('Reminder').add({

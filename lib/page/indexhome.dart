@@ -13,53 +13,72 @@ class IndexHome extends StatefulWidget {
   _IndexHomeState createState() => _IndexHomeState();
 }
 
-class _IndexHomeState extends State<IndexHome> {
+class _IndexHomeState extends State<IndexHome> with WidgetsBindingObserver{
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   final String guardianPhoneNumber = '';
   final String emergencyContactPhoneNumber = '';
   final Telephony telephony = Telephony.instance;
 
- Future<Map<String, String>> _getEmergencyContacts() async {
-  try {
-    // Get the current user's document
-    DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection('User').doc(widget.userID).get();
+  Future<Map<String, String>> _getEmergencyContacts() async {
+    try {
+      // Get the current user's document
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('User')
+          .doc(widget.userID)
+          .get();
 
-    if (userDoc.exists) {
-      Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+      if (userDoc.exists) {
+        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
 
-      // Extract emergency contact number
-      String emergencyContactPhoneNumber = userData['emergencyContact'] ?? '';
+        // Extract emergency contact number
+        String emergencyContactPhoneNumber = userData['emergencyContact'] ?? '';
 
-      // Extract guardianIDs array
-      List<dynamic> guardianIDs = userData['guardianIDs'] ?? [];
-      
-      if (guardianIDs.isEmpty) {
-        throw 'No guardians linked to this user.';
-      }
+        // Extract guardianIDs array
+        List<dynamic> guardianIDs = userData['guardianIDs'] ?? [];
 
-      // Extract guardian ID from the reference path
-      // The path is in format "/User/ID" - we want just the ID
-      String guardianPath = guardianIDs.first.toString();
-      String guardianID = guardianPath.split('/').last;
+        if (guardianIDs.isEmpty) {
+          throw 'No guardians linked to this user.';
+        }
 
-      // Fetch the guardian's document to get their phone number
-      DocumentSnapshot guardianDoc = await FirebaseFirestore.instance.collection('User').doc(guardianID).get();
-      if (guardianDoc.exists) {
-        String guardianPhoneNumber = (guardianDoc.data() as Map<String, dynamic>)['phoneNo'] ?? '';
-        return {
-          'guardianPhoneNumber': guardianPhoneNumber,
-          'emergencyContactPhoneNumber': emergencyContactPhoneNumber,
-        };
+        // Extract guardian ID from the reference path
+        // The path is in format "/User/ID" - we want just the ID
+        String guardianPath = guardianIDs.first.toString();
+        String guardianID = guardianPath.split('/').last;
+
+        // Fetch the guardian's document to get their phone number
+        DocumentSnapshot guardianDoc = await FirebaseFirestore.instance
+            .collection('User')
+            .doc(guardianID)
+            .get();
+        if (guardianDoc.exists) {
+          String guardianPhoneNumber =
+              (guardianDoc.data() as Map<String, dynamic>)['phoneNo'] ?? '';
+          return {
+            'guardianPhoneNumber': guardianPhoneNumber,
+            'emergencyContactPhoneNumber': emergencyContactPhoneNumber,
+          };
+        } else {
+          throw 'Guardian document not found.';
+        }
       } else {
-        throw 'Guardian document not found.';
+        throw 'User document not found.';
       }
-    } else {
-      throw 'User document not found.';
+    } catch (e) {
+      print('Error fetching emergency contacts: $e');
+      throw 'Failed to retrieve emergency contacts.';
     }
-  } catch (e) {
-    print('Error fetching emergency contacts: $e');
-    throw 'Failed to retrieve emergency contacts.';
   }
-}
 
   Future<bool> _checkAndRequestPermissions() async {
     try {
@@ -86,9 +105,9 @@ class _IndexHomeState extends State<IndexHome> {
       print('SMS Permission: ${smsStatus.isGranted}');
       print('Phone Permission: ${phoneStatus.isGranted}');
 
-      return locationStatus.isGranted && 
-             smsStatus.isGranted && 
-             phoneStatus.isGranted;
+      return locationStatus.isGranted &&
+          smsStatus.isGranted &&
+          phoneStatus.isGranted;
     } catch (e) {
       print('Permission check error: $e');
       _showErrorDialog('Error checking permissions: $e');
@@ -212,17 +231,18 @@ class _IndexHomeState extends State<IndexHome> {
   // }
 
 // Launch WhatsApp URL in web browser
-Future<void> launchWhatsApp(String phone, String message) async {
-  final whatsappUrl = 'https://wa.me/$phone?text=$message';
-  if (await canLaunchUrl(Uri.parse(whatsappUrl))) {
-    await launchUrl(Uri.parse(whatsappUrl), mode: LaunchMode.externalApplication);
-  } else {
-    // Fallback: Open the link in a browser
-    print("WhatsApp not available, launching in browser.");
-    await launchUrl(Uri.parse(whatsappUrl), mode: LaunchMode.externalNonBrowserApplication);
+  Future<void> launchWhatsApp(String phone, String message) async {
+    final whatsappUrl = 'https://wa.me/$phone?text=$message';
+    if (await canLaunchUrl(Uri.parse(whatsappUrl))) {
+      await launchUrl(Uri.parse(whatsappUrl),
+          mode: LaunchMode.externalApplication);
+    } else {
+      // Fallback: Open the link in a browser
+      print("WhatsApp not available, launching in browser.");
+      await launchUrl(Uri.parse(whatsappUrl),
+          mode: LaunchMode.externalNonBrowserApplication);
+    }
   }
-}
-
 
 //   // Trigger panic button
 // Future<void> _triggerPanicButton() async {
@@ -303,88 +323,115 @@ Future<void> launchWhatsApp(String phone, String message) async {
 //   }
 // }
 
-Future<void> _triggerPanicButton() async {
-  try {
-    // Check and request all necessary permissions
-    bool permissionsGranted = await _checkAndRequestPermissions();
+  bool _shouldShowDialog = false;
 
-    if (!permissionsGranted) {
-      _showErrorDialog('Please grant all required permissions');
-      return;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _shouldShowDialog) {
+      _shouldShowDialog = false;
+      _showEmergencyConfirmationDialog();
     }
+  }
 
-    // Fetch emergency contact information
-    Map<String, String> contacts = await _getEmergencyContacts();
-    String guardianPhoneNumber = contacts['guardianPhoneNumber']!;
-    String emergencyContactPhoneNumber = contacts['emergencyContactPhoneNumber']!;
+  Future<void> _triggerPanicButton() async {
+    try {
+      // Check and request all necessary permissions
+      bool permissionsGranted = await _checkAndRequestPermissions();
 
-    // Show confirmation dialog
-    bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Emergency Alert'),
-          content: const Text('Are you sure you want to trigger the emergency protocol?'),
-          actions: [
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text('Confirm'),
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed == true) {
-      // Get location
-      String location = await _getCurrentLocation();
-
-      if (location.contains('Location')) {
-        _showErrorDialog('Cannot proceed without location');
+      if (!permissionsGranted) {
+        _showErrorDialog('Please grant all required permissions');
         return;
       }
 
-      // Send WhatsApp message
-      try {
-        String formattedPhoneNumber = emergencyContactPhoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
-        await launchWhatsApp(
-          formattedPhoneNumber,
-          'EMERGENCY: I need immediate help! My current location is: $location',
-        );
-      } catch (e) {
-        print('WhatsApp sending error: $e');
-        _showErrorDialog('Failed to send WhatsApp message: $e');
-      }
+      // Fetch emergency contact information
+      Map<String, String> contacts = await _getEmergencyContacts();
+      String guardianPhoneNumber = contacts['guardianPhoneNumber']!;
+      String emergencyContactPhoneNumber =
+          contacts['emergencyContactPhoneNumber']!;
 
-      // Make a phone call to the guardian
-      try {
-        final Uri callUri = Uri(scheme: 'tel', path: guardianPhoneNumber);
-        if (await canLaunchUrl(callUri)) {
-          await launchUrl(callUri, mode: LaunchMode.externalApplication);
-        } else {
-          _showErrorDialog('Could not launch dialer');
+      // Show confirmation dialog
+      // bool? confirmed = await showDialog<bool>(
+      //   context: context,
+      //   builder: (BuildContext context) {
+      //     return AlertDialog(
+      //       title: const Text('Emergency Alert'),
+      //       content: const Text('Are you sure you want to trigger the emergency protocol?'),
+      //       actions: [
+      //         TextButton(
+      //           child: const Text('Cancel'),
+      //           onPressed: () => Navigator.of(context).pop(false),
+      //         ),
+      //         ElevatedButton(
+      //           style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+      //           child: const Text('Confirm'),
+      //           onPressed: () => Navigator.of(context).pop(true),
+      //         ),
+      //       ],
+      //     );
+      //   },
+      // );
+
+      bool? confirmed = true;
+
+      if (confirmed == true) {
+        // Get location
+         try {
+            final Uri callUri = Uri(scheme: 'tel', path: guardianPhoneNumber);
+            await launchUrl(callUri, mode: LaunchMode.externalApplication);
+
+            // if (await canLaunchUrl(callUri)) {
+            //   await launchUrl(callUri, mode: LaunchMode.externalApplication);
+            // } else {
+            //   _showErrorDialog('Could not launch dialer');
+            // }
+          } catch (e) {
+            print('Call error: $e');
+            _showErrorDialog('Failed to make emergency call: $e');
+          }
+
+          // Show emergency confirmation dialog
+        // WidgetsBinding.instance.addPostFrameCallback((_) {
+        //   _showEmergencyConfirmationDialog();
+        // });
+        String location = await _getCurrentLocation();
+
+        if (location.contains('Location')) {
+         
+          _showErrorDialog('Cannot proceed without location');
+          return;
+        } 
+        
+        await Future.delayed(Duration(milliseconds: 100));
+        while (WidgetsBinding.instance?.lifecycleState != AppLifecycleState.resumed) {
+          await Future.delayed(Duration(milliseconds: 100));
         }
-      } catch (e) {
-        print('Call error: $e');
-        _showErrorDialog('Failed to make emergency call: $e');
+
+         // Send WhatsApp message
+          try {
+            String formattedPhoneNumber =
+                emergencyContactPhoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
+            await launchWhatsApp(
+              formattedPhoneNumber,
+              'EMERGENCY: I need immediate help! My current location is: $location',
+            );
+          } catch (e) {
+            print('WhatsApp sending error: $e');
+            _showErrorDialog('Failed to send WhatsApp message: $e');
+          }
+
+          // Set the flag to show the dialog when the app resumes
+        _shouldShowDialog = true;
+
+        // // Show emergency confirmation dialog
+        // WidgetsBinding.instance.addPostFrameCallback((_) {
+        //   _showEmergencyConfirmationDialog();
+        // });
       }
-
-      // Show emergency confirmation dialog
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showEmergencyConfirmationDialog();
-      });
+    } catch (e) {
+      print('Panic button trigger error: $e');
+      _showErrorDialog('Emergency protocol failed: $e');
     }
-  } catch (e) {
-    print('Panic button trigger error: $e');
-    _showErrorDialog('Emergency protocol failed: $e');
   }
-}
-
 
   void _showErrorDialog(String message) {
     showDialog(
@@ -423,47 +470,47 @@ Future<void> _triggerPanicButton() async {
   // }
 
   void _showEmergencyConfirmationDialog() {
-  showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: const Text('Emergency Alert Sent'),
-        content: const Text('Guardian has been called and emergency contact has been messaged.'),
-        actions: [
-          TextButton(
-            child: const Text('OK'),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          // ElevatedButton(
-          //   style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-          //   child: const Text('Open WhatsApp Link'),
-          //   onPressed: () async {
-          //     // Construct WhatsApp URL
-          //     String formattedPhoneNumber = guardianPhoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
-          //     final Uri whatsappUrl = Uri.parse(
-          //       'https://wa.me/$formattedPhoneNumber?text=EMERGENCY: I need immediate help! My current location is: [location]'
-          //     );
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Emergency Alert Sent'),
+          content: const Text(
+              'Guardian has been called and emergency contact has been messaged.'),
+          actions: [
+            TextButton(
+              child: const Text('OK'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            // ElevatedButton(
+            //   style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            //   child: const Text('Open WhatsApp Link'),
+            //   onPressed: () async {
+            //     // Construct WhatsApp URL
+            //     String formattedPhoneNumber = guardianPhoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
+            //     final Uri whatsappUrl = Uri.parse(
+            //       'https://wa.me/$formattedPhoneNumber?text=EMERGENCY: I need immediate help! My current location is: [location]'
+            //     );
 
-          //     try {
-          //       // Launch WhatsApp URL
-          //       if (await canLaunchUrl(whatsappUrl)) {
-          //         await launchUrl(whatsappUrl);
-          //       } else {
-          //         print('Could not launch WhatsApp link');
-          //         _showErrorDialog('Failed to open WhatsApp link');
-          //       }
-          //     } catch (e) {
-          //       print('WhatsApp launch error: $e');
-          //       _showErrorDialog('Failed to launch WhatsApp link');
-          //     }
-          //   },
-          // ),
-        ],
-      );
-    },
-  );
-}
-
+            //     try {
+            //       // Launch WhatsApp URL
+            //       if (await canLaunchUrl(whatsappUrl)) {
+            //         await launchUrl(whatsappUrl);
+            //       } else {
+            //         print('Could not launch WhatsApp link');
+            //         _showErrorDialog('Failed to open WhatsApp link');
+            //       }
+            //     } catch (e) {
+            //       print('WhatsApp launch error: $e');
+            //       _showErrorDialog('Failed to launch WhatsApp link');
+            //     }
+            //   },
+            // ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

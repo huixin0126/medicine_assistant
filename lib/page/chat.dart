@@ -46,13 +46,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   String _spokenText = "";
   bool _isLoading = true;
   String chatID = "";
+  bool _isSpeechAvailable = false; // Add this flag
+  bool _isSendingMessage = false;
 
   @override
   void initState() {
     super.initState();
     _fetchUserNames();
     _initializeChatSession();
-    _speech = stt.SpeechToText();
+    _initializeSpeech(); // Add this method call
 
     // Initialize animation controller
     _animationController = AnimationController(
@@ -122,32 +124,67 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    // if (_animationController.isAnimating) {
+    //   _animationController.stop();
+    // }
     _animationController.dispose();
+    // _speech.stop();
     super.dispose();
   }
 
-  Future<void> _startListening() async {
-    bool available = await _speech.initialize(
+ Future<void> _initializeSpeech() async {
+  _speech = stt.SpeechToText();
+  try {
+    _isSpeechAvailable = await _speech.initialize(
       onStatus: (status) {
         print('Speech status: $status');
-        if (status == 'notListening') {
+        if (status == 'notListening' && mounted) {
           setState(() => _isListening = false);
-          _animationController.stop(); // Stop the animation when done listening
+          _animationController.stop();
         }
       },
       onError: (errorNotification) {
         print('Speech error: $errorNotification');
-        setState(() => _isListening = false);
-        _animationController.stop(); // Stop on error
+        if (mounted) {
+          setState(() {
+            _isListening = false;
+            _isSpeechAvailable = false;
+          });
+          _animationController.stop();
+          _showSpeechError(errorNotification.errorMsg);
+        }
       },
     );
-
-    if (available) {
+  } catch (e) {
+    print('Speech initialization error: $e');
+    if (mounted) {
       setState(() {
-        _isListening = true;
+        _isSpeechAvailable = false;
       });
+      _showSpeechError('Speech recognition initialization failed');
+    }
+  }
+}
 
-      // Start the rotation animation, ensuring it completes the full duration
+  void _showSpeechError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Future<void> _startListening() async {
+    print('start');
+    if (!_isSpeechAvailable) {
+      _showSpeechError('Speech recognition is not available on this device');
+      return;
+    }
+
+    try {
+      setState(() => _isListening = true);
       _animationController.forward();
 
       await _speech.listen(
@@ -157,35 +194,57 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             _messageController.text = _spokenText;
           });
         },
-        listenFor: Duration(seconds: 60), // Listen for exactly 60 seconds
+        listenFor: Duration(seconds: 60),
         partialResults: true,
         cancelOnError: true,
         listenMode: ListenMode.dictation,
       );
-    } else {
-      print('Speech recognition not available');
+
+      await Future.delayed(Duration(milliseconds: 500));
+
+      while ((_speech.isListening)) {
+        print('listen');
+
+        await Future.delayed(Duration(milliseconds: 500));
+      }
+      print('stop');
+      _stopListening();
+      
+    } catch (e) {
+      print('Error starting speech recognition: $e');
+      if (mounted) {
+      setState(() => _isListening = false);
+      _animationController.stop();
+      _showSpeechError('Failed to start speech recognition');
+    }
     }
   }
 
   void _stopListening() {
     if (_speech.isListening) {
       _speech.stop();
-      setState(() {
-        _isListening = false;
-      });
-
-      // Stop the rotation animation
-      _animationController.stop();
-      _animationController.reset();
-
-      Future.delayed(Duration(milliseconds: 500), () {
-        if (_spokenText.isNotEmpty) {
-          // Send the spoken text as a message
-          _sendMessage(_spokenText);
-          _spokenText = "";
-        }
-      });
     }
+
+    if(!_isListening)
+    {
+      return;
+    }
+    setState(() {
+      _isListening = false;
+    });
+    // Stop the rotation animation
+    _animationController.stop();
+    _animationController.reset();
+
+    Future.delayed(Duration(milliseconds: 500), () async {
+      if (_spokenText.isNotEmpty) {
+        // Send the spoken text as a message
+        await _sendMessage(_spokenText);
+        _spokenText = "";
+      }
+    });
+
+    print('stop2');
   }
 
   Future<void> _initializeChatSession() async {
@@ -363,29 +422,68 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 //   }
 // }
   Future<void> sendMessageWithImage() async {
+    final String message = _messageController.text.trim();
+    if (message.isEmpty && _image == null) return;
+
+    setState(() {
+      _isSendingMessage = true;
+    });
+
     try {
-      String message = _messageController.text.trim();
       String? imageUrl;
 
-      // If an image is selected, upload it to Firebase Storage
+      // Upload image if exists
       if (_image != null) {
-        imageUrl = await _uploadImageToStorage(
-            _image!); // Upload image only if selected
+        imageUrl = await _uploadImageToStorage(_image!);
       }
 
-      // Send the message (text or image URL) to Firestore
-      await _sendMessage(message, imageUrl: imageUrl);
+      // Create message data
+      final newMessage = {
+        'textData': message.isNotEmpty ? message : null,
+        'imageUrl': imageUrl,
+        'timestamp': DateTime.now(),
+        'senderID': widget.userID,
+        'senderName': _currentUserName,
+        'receiverID': widget.receiverID,
+      };
 
-      // Clear the text field and reset the image after message is sent
-      _messageController.clear();
-      setState(() {
-        _image = null; // Reset image after sending
-      });
+      // Ensure the chat document exists
+      await _firestore.collection('Chat').doc(widget.chatID).set({
+        'participants': [widget.userID, widget.receiverID],
+      }, SetOptions(merge: true));
+
+      // Add message to the Messages subcollection
+      await _firestore
+          .collection('Chat')
+          .doc(widget.chatID)
+          .collection('Messages')
+          .add(newMessage);
+
+      // Clear inputs and update UI
+      if (mounted) {
+        setState(() {
+          _messageController.clear();
+          _image = null;
+          _messages.add(newMessage);
+        });
+      }
+
+      // Scroll to bottom after sending
+      _scrollToBottom();
+
     } catch (e) {
       print('Error sending message: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to send message. Please try again.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send message. Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSendingMessage = false;
+        });
+      }
     }
   }
 
@@ -424,6 +522,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       // Update the UI after the message is added
       setState(() {
         _messages.add(newMessage); // Add message to the local message list
+        _messageController.text = "";
+        _spokenText = "";
       });
     } catch (e) {
       print("Error sending message: $e");
@@ -472,15 +572,20 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> pickImage() async {
-    final pickedImage = await _picker.pickImage(source: ImageSource.gallery);
-    if (pickedImage != null) {
-      setState(() {
-        _image = File(pickedImage.path);
-      });
-      //await uploadImageToFirestore(_image!); // Upload the selected image
-    } else {
-      print('No image picked');
+Future<void> _pickImage(ImageSource source) async {
+    try {
+      final pickedImage = await _picker.pickImage(source: source);
+      if (pickedImage != null) {
+        setState(() {
+          _image = File(pickedImage.path);
+        });
+        // Uncomment if you want to upload the image after selection
+        // await uploadImageToFirestore(_image!);
+      } else {
+        print('No image picked');
+      }
+    } catch (e) {
+      print('Error picking image: $e');
     }
   }
 
@@ -621,7 +726,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _scrollToBottom();
   }
 
-  Widget _buildMessageList() {
+   Widget _buildMessageList() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -630,41 +735,25 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       return const Center(child: Text('No messages yet.'));
     }
 
-    // Scroll to the bottom after the widget is built, ensuring it's done only once after loading.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_messages.isNotEmpty) {
-        _scrollToBottom();
-      }
-    });
-
     return ListView.builder(
-      reverse: false, // Ensure messages are shown in chronological order
+      reverse: false,
       controller: _scrollController,
       itemCount: _messages.length,
+      padding: const EdgeInsets.all(8),
       itemBuilder: (context, index) {
         final messageData = _messages[index];
         final isCurrentUser = messageData['senderID'] == widget.userID;
-        final senderName = messageData['senderName'] ?? 'Unknown Sender';
-        final messageText = messageData['textData'];
-        final imageUrl = messageData['imageUrl'];
-
-        if (imageUrl != null && imageUrl.isNotEmpty) {
-          return chatDialog(
-            avatar: '',
-            name: senderName,
-            message: null, // No text, show image
-            imageUrl: imageUrl, // Pass image URL
+        
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: chatDialog(
+            name: messageData['senderName'] ?? 'Unknown User',
+            message: messageData['textData'],
+            imageUrl: messageData['imageUrl'],
             isLeft: !isCurrentUser,
             context: context,
-          );
-        }
-
-        return chatDialog(
-          avatar: '',
-          name: senderName,
-          message: messageText ?? 'No message',
-          isLeft: !isCurrentUser,
-          context: context,
+            avatar: '', // Add avatar URL if you have one
+          ),
         );
       },
     );
@@ -677,17 +766,19 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Static microphone button
           CircleAvatar(
             radius: 30,
-            backgroundColor: _isListening ? Colors.red : Colors.blue,
-            child: const Icon(
+            backgroundColor: !_isSpeechAvailable
+                ? Colors.grey // Disabled state
+                : _isListening
+                    ? Colors.red
+                    : Colors.blue,
+            child: Icon(
               Icons.mic,
-              color: Colors.white,
+              color: _isSpeechAvailable ? Colors.white : Colors.black38,
               size: 25,
             ),
           ),
-          // Rotating ring
           if (_isListening)
             AnimatedBuilder(
               animation: _rotationAnimation,
@@ -728,6 +819,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           Expanded(
             child: _buildMessageList(),
           ),
+          
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Column(
@@ -735,11 +827,24 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 if (_image != null)
                   Column(
                     children: [
-                      Image.file(
-                        _image!,
-                        width: 100,
-                        height: 100,
-                        fit: BoxFit.cover,
+                      Stack(
+                        alignment: Alignment.topRight,
+                        children: [
+                          Image.file(
+                            _image!,
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.cover,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.red),
+                            onPressed: () {
+                              setState(() {
+                                _image = null;
+                              });
+                            },
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                     ],
@@ -747,38 +852,74 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 Row(
                   children: [
                     GestureDetector(
-                      onLongPressStart: (details) {
-                        _startListening();
-                      },
-                      onLongPressEnd: (details) {
-                        _stopListening();
-                      },
+                      onLongPressStart: _isSpeechAvailable
+                          ? (details) => _startListening()
+                          : null,
+                      onLongPressEnd: _isSpeechAvailable
+                          ? (details) => _stopListening()
+                          : null,
                       child: _buildVoiceButton(),
                     ),
                     Expanded(
                       child: TextField(
                         controller: _messageController,
+                        enabled: !_isSendingMessage,
                         decoration: const InputDecoration(
-                          hintText: 'Type your question...',
+                          hintText: 'Type your message...',
                           border: OutlineInputBorder(),
                         ),
+                        onChanged: (_) => setState(() {}), // Rebuild for send button state
                       ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.image),
-                      onPressed: () async {
-                        await pickImage();
-                      },
+                      onPressed: _isSendingMessage
+                          ? null
+                          : () {
+                              showModalBottomSheet(
+                                context: context,
+                                builder: (BuildContext context) {
+                                  return Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      ListTile(
+                                        leading: const Icon(Icons.camera_alt),
+                                        title: const Text("Take Photo"),
+                                        onTap: () {
+                                          Navigator.pop(context);
+                                          _pickImage(ImageSource.camera);
+                                        },
+                                      ),
+                                      ListTile(
+                                        leading: const Icon(Icons.photo_library),
+                                        title: const Text("Choose from Gallery"),
+                                        onTap: () {
+                                          Navigator.pop(context);
+                                          _pickImage(ImageSource.gallery);
+                                        },
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+                            },
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.send),
-                      onPressed: () async {
-                        if (_messageController.text.isNotEmpty ||
-                            _image != null) {
-                          await sendMessageWithImage(); // Send text and/or image together
-                        }
-                      },
-                    ),
+                    _isSendingMessage
+                        ? Container(
+                            width: 48,
+                            height: 48,
+                            padding: const EdgeInsets.all(12),
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : IconButton(
+                            icon: const Icon(Icons.send),
+                            onPressed: (_messageController.text.trim().isNotEmpty ||
+                                    _image != null)
+                                ? () => sendMessageWithImage()
+                                : null,
+                          ),
                   ],
                 ),
               ],

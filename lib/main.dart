@@ -6,52 +6,61 @@ import 'package:medicine_assistant_app/page/home.dart';
 import 'package:medicine_assistant_app/page/login.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:telephony/telephony.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized(); // Ensure widgets are initialized
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform); // Initialize Firebase
+Future<void> requestPermissions(BuildContext? context) async {
+ try {
+    // Request microphone permission
+    PermissionStatus microphoneStatus = await Permission.microphone.request();
+    if (microphoneStatus.isDenied) {
+      debugPrint('Microphone permission denied');
+    }
 
-  // Request permissions for phone and SMS
-  await Telephony.instance.requestPhoneAndSmsPermissions;
+    // Request location permissions
+    PermissionStatus locationStatus = await Permission.location.request();
+    if (locationStatus.isDenied) {
+      debugPrint('Location permission denied');
+    } else if (locationStatus.isPermanentlyDenied) {
+      debugPrint('Location permission permanently denied');
+    }
 
-  // Initialize Firebase Messaging and retrieve device token
-  FirebaseMessaging messaging = FirebaseMessaging.instance;
-  String? deviceToken = await messaging.getToken();
-  debugPrint('Device Token: $deviceToken'); // Log the token for debugging
-
-  // Initialize Awesome Notifications
-  await AwesomeNotifications().initialize(
-    'resource://drawable/white_notification', // Notification icon (ensure the icon is in your resources)
-    [
-      NotificationChannel(
-        channelKey: 'medicine_reminder',
-        channelName: 'Medicine Reminders',
-        channelDescription: 'Reminder for scheduled medication',
-        defaultColor: const Color(0xFF9D50DD),
-        ledColor: Colors.white,
-        importance: NotificationImportance.Max,
-        channelShowBadge: true,
-        enableVibration: true,
-        enableLights: true,
-        playSound: true,
-        soundSource: 'resource://raw/res_ringtone',
-      ),
-    ],
-    debug: true,
-  );
-
-  // Request notification permissions
-  if (!await AwesomeNotifications().isNotificationAllowed()) {
-    await AwesomeNotifications().requestPermissionToSendNotifications();
+    // Request notification permission
+    PermissionStatus notificationStatus = await Permission.notification.request();
+    if (notificationStatus.isDenied) {
+      debugPrint('Notification permission denied');
+    }
+  } catch (e) {
+    debugPrint('Error requesting permissions: $e');
   }
-
-  runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    try {
+      // Schedule permission request for after the widget is built
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        // Request permissions safely
+        await requestPermissions(context);
+      });
+    } catch (e) {
+      debugPrint('Error in initialization: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +71,77 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: LoginPage(), // Default screen (login page)
+      home: LoginPage(),
+    );
+  }
+}
+
+Future<void> main() async {
+  try {
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    // Initialize Firebase
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    
+    // Initialize Firebase Messaging with error handling
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    try {
+      String? deviceToken = await messaging.getToken();
+      debugPrint('Device Token: $deviceToken');
+    } catch (e) {
+      debugPrint('Error getting FCM token: $e');
+    }
+
+    // // Initialize telephony with error handling
+    // try {
+    //   await Telephony.instance.requestPhoneAndSmsPermissions;
+    // } catch (e) {
+    //   debugPrint('Error requesting phone/SMS permissions: $e');
+    // }
+
+    // Initialize notifications with error handling
+    try {
+      await AwesomeNotifications().initialize(
+        'resource://drawable/white_notification',
+        [
+          NotificationChannel(
+            channelKey: 'medicine_reminder',
+            channelName: 'Medicine Reminders',
+            channelDescription: 'Reminder for scheduled medication',
+            defaultColor: const Color(0xFF9D50DD),
+            ledColor: Colors.white,
+            importance: NotificationImportance.Max,
+            channelShowBadge: true,
+            enableVibration: true,
+            enableLights: true,
+            playSound: true,
+            soundSource: 'resource://raw/res_ringtone',
+          ),
+        ],
+        debug: true,
+      );
+    } catch (e) {
+      debugPrint('Error initializing notifications: $e');
+    }
+
+    await AwesomeNotifications().isNotificationAllowed().then((isAllowed) async {
+    if (!isAllowed) {
+      // Prompt user to allow notifications
+      await AwesomeNotifications().requestPermissionToSendNotifications();
+    }
+  });
+
+    runApp(const MyApp());
+  } catch (e) {
+    debugPrint('Error in main: $e');
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Text('Error initializing app: $e'),
+          ),
+        ),
+      ),
     );
   }
 }
