@@ -29,7 +29,7 @@ class _HomePageState extends State<HomePage> {
       RecognizePage(userID: widget.userID),
       ChatListPage(userID: widget.userID),
       MedicationReminderScreen(userID: widget.userID),
-      ProfilePage(userID: widget.userID, user: widget.user,),  // Assuming ProfilePage takes userID
+      ProfilePage(userID: widget.userID),  // Assuming ProfilePage takes userID
     ];
   }
 

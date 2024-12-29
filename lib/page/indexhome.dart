@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:telephony/telephony.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class IndexHome extends StatefulWidget {
   final String userID;
@@ -28,7 +28,6 @@ class _IndexHomeState extends State<IndexHome> with WidgetsBindingObserver{
 
   final String guardianPhoneNumber = '';
   final String emergencyContactPhoneNumber = '';
-  final Telephony telephony = Telephony.instance;
 
   Future<Map<String, String>> _getEmergencyContacts() async {
     try {
@@ -88,12 +87,6 @@ class _IndexHomeState extends State<IndexHome> with WidgetsBindingObserver{
         locationStatus = await Permission.location.request();
       }
 
-      // Check and request SMS permissions
-      var smsStatus = await Permission.sms.status;
-      if (!smsStatus.isGranted) {
-        smsStatus = await Permission.sms.request();
-      }
-
       // Check and request phone call permissions
       var phoneStatus = await Permission.phone.status;
       if (!phoneStatus.isGranted) {
@@ -102,11 +95,9 @@ class _IndexHomeState extends State<IndexHome> with WidgetsBindingObserver{
 
       // Print permission status for debugging
       print('Location Permission: ${locationStatus.isGranted}');
-      print('SMS Permission: ${smsStatus.isGranted}');
       print('Phone Permission: ${phoneStatus.isGranted}');
 
       return locationStatus.isGranted &&
-          smsStatus.isGranted &&
           phoneStatus.isGranted;
     } catch (e) {
       print('Permission check error: $e');
@@ -512,25 +503,341 @@ class _IndexHomeState extends State<IndexHome> with WidgetsBindingObserver{
     );
   }
 
+DateTime _getNextTime(dynamic timesField) {
+  // Handle the case where timesField could be either a Timestamp or a List
+  List<dynamic> times;
+
+  if (timesField is List) {
+    // If it's already a list, use it
+    times = timesField;
+  } else if (timesField is Timestamp) {
+    // If it's a single Timestamp, convert it to a list with one element
+    times = [timesField];
+  } else {
+    // If it's not a list or a timestamp, return a default value (null or error)
+    return DateTime.now(); // or handle the error
+  }
+
+  // Now times is guaranteed to be a List
+  DateTime? nextTime;
+  for (var time in times) {
+    try {
+      // Check if time is a Timestamp, then convert to DateTime
+      DateTime reminderTime = time is Timestamp ? time.toDate() : DateTime.parse(time.toString());
+
+      if (nextTime == null || reminderTime.isBefore(nextTime)) {
+        nextTime = reminderTime;
+      }
+    } catch (e) {
+      print('Error parsing time: $e');
+    }
+  }
+
+  return nextTime ?? DateTime.now(); // Return the next time or now if no valid time found
+}
+
+Stream<List<QueryDocumentSnapshot>> _getUpcomingReminders() {
+  DateTime now = DateTime.now();
+
+  return FirebaseFirestore.instance
+      .collection('Reminder')
+      .where('userID', isEqualTo: widget.userID)
+      .snapshots()
+      .map((snapshot) {
+        List<QueryDocumentSnapshot> upcomingReminders = snapshot.docs.where((doc) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+
+          if (!data.containsKey('times') || data['times'] == null) {
+            return false;
+          }
+
+          DateTime nextTime = _getNextTime(data['times']);
+          
+          return nextTime.isAfter(now);
+        }).toList();
+
+        // Sort reminders by the next time
+        upcomingReminders.sort((a, b) {
+          DateTime timeA = _getNextTime((a.data() as Map<String, dynamic>)['times']);
+          DateTime timeB = _getNextTime((b.data() as Map<String, dynamic>)['times']);
+          return timeA.compareTo(timeB);
+        });
+
+        return upcomingReminders.take(2).toList();
+      });
+}
+
+
+  Stream<QuerySnapshot> _getMedicineStream() {
+    return FirebaseFirestore.instance
+        .collection('Medicine')
+        .where('userID', isEqualTo: widget.userID)
+        .snapshots();
+  }
+
+  // @override
+  // Widget build(BuildContext context) {
+  //   return Scaffold(
+  //     appBar: AppBar(
+  //       title: const Text('Home Page'),
+  //     ),
+  //     body: Center(
+  //       child: ElevatedButton(
+  //         onPressed: _triggerPanicButton,
+  //         style: ElevatedButton.styleFrom(
+  //           backgroundColor: Colors.red,
+  //           padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20),
+  //           textStyle: const TextStyle(
+  //             fontSize: 20,
+  //             fontWeight: FontWeight.bold,
+  //           ),
+  //         ),
+  //         child: const Text('PANIC BUTTON'),
+  //       ),
+  //     ),
+  //   );
+  // }
+
   @override
   Widget build(BuildContext context) {
+    DateTime now = DateTime.now();
+    DateTime startOfDay = DateTime(now.year, now.month, now.day, 0, 0, 0);
+    DateTime endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    
+      // Print the current date, start of day, and end of day
+  print("Current Date: ${now.toString()}");
+  print("Start of Today: ${startOfDay.toString()}");
+  print("End of Today: ${endOfDay.toString()}");
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Home Page'),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Home',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 25),
+                // Panic Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      // Implement panic button functionality
+                      _triggerPanicButton();
+                    },
+                    icon: const Icon(
+                      Icons.warning_rounded,
+                      color: Colors.white, // Set the icon color to white
+                    ),
+                    label: const Text(
+                      'Panic Button',
+                      style: TextStyle(color: Colors.white), // Set the text color to white
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      textStyle: const TextStyle(fontSize: 20),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Upcoming Medication Time',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Upcoming Reminders
+                StreamBuilder<List<QueryDocumentSnapshot>>(
+                  stream: _getUpcomingReminders(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return const Text('Something went wrong');
+                    }
+
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const CircularProgressIndicator();
+                    }
+
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return const Text('No upcoming medications');
+                    }
+
+                    // Only display the first two reminders
+                    return Column(
+                      children: snapshot.data!.take(2).map((doc) {
+                        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+                        DateTime nextTime = _getNextTime(data['times']);
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      data['name'],
+                                      style: const TextStyle(
+                                        color: Colors.purple,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Dose: ${data['dose']}',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      DateFormat('hh:mm a').format(nextTime),
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      data['mealTiming'],
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Container(
+                              //   padding: const EdgeInsets.symmetric(
+                              //     horizontal: 16,
+                              //     vertical: 8,
+                              //   ),
+                              //   decoration: BoxDecoration(
+                              //     color: Colors.purple,
+                              //     borderRadius: BorderRadius.circular(20),
+                              //   ),
+                              //   child: const Text(
+                              //     'Done',
+                              //     style: TextStyle(
+                              //       color: Colors.white,
+                              //     ),
+                              //   ),
+                              // ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+                // Stats Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('Medicine')
+                            .where('userID', isEqualTo: widget.userID)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          int totalMedicine = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                          return _buildStatsCard(
+                            'Total medicine',
+                            totalMedicine.toString(),
+                            const Color.fromARGB(255, 222, 174, 230)!,
+                            Icons.medication,
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('Reminder')
+                            .where('userID', isEqualTo: widget.userID)
+                            // .where('status', isEqualTo: 'Active')
+                            .where('times', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+                            .where('times', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return const Text('Something went wrong');
+                          }
+
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const CircularProgressIndicator();
+                          }
+                          int totalReminders = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                          return _buildStatsCard(
+                            "Today's Reminders",
+                            totalReminders.toString(),
+                            const Color.fromARGB(255, 250, 199, 122)!,
+                            Icons.calendar_today,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: _triggerPanicButton,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20),
-            textStyle: const TextStyle(
-              fontSize: 20,
+    );
+  }
+
+  Widget _buildStatsCard(String title, String value, Color color, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.white),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
           ),
-          child: const Text('PANIC BUTTON'),
-        ),
+        ],
       ),
     );
   }

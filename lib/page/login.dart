@@ -158,6 +158,7 @@ void _handleLogin() async {
           name: userSnapshot['name'],
           email: userSnapshot['email'],
           phoneNo: userSnapshot['phoneNo'],
+          emergencyContact: userSnapshot['emergencyContact'] ?? '',
           faceData: userSnapshot['faceData'] ?? '',
           guardianIDs: List<String>.from(userSnapshot['guardianIDs'] ?? []),
           seniorIDs: List<String>.from(userSnapshot['seniorIDs'] ?? []),

@@ -145,7 +145,7 @@ Future<void> _handleRegister() async {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => ProfilePage(userID: userID, user: user),
+          builder: (context) => ProfilePage(userID: userID),
         ),
       );
     } catch (e) {

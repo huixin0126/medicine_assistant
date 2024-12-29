@@ -5,13 +5,12 @@ import 'package:medicine_assistant_app/firebase_options.dart';
 import 'package:medicine_assistant_app/page/home.dart';
 import 'package:medicine_assistant_app/page/login.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
-import 'package:telephony/telephony.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 Future<void> requestPermissions(BuildContext? context) async {
- try {
+  try {
     // Request microphone permission
     PermissionStatus microphoneStatus = await Permission.microphone.request();
     if (microphoneStatus.isDenied) {
@@ -92,13 +91,6 @@ Future<void> main() async {
       debugPrint('Error getting FCM token: $e');
     }
 
-    // // Initialize telephony with error handling
-    // try {
-    //   await Telephony.instance.requestPhoneAndSmsPermissions;
-    // } catch (e) {
-    //   debugPrint('Error requesting phone/SMS permissions: $e');
-    // }
-
     // Initialize notifications with error handling
     try {
       await AwesomeNotifications().initialize(
@@ -125,11 +117,11 @@ Future<void> main() async {
     }
 
     await AwesomeNotifications().isNotificationAllowed().then((isAllowed) async {
-    if (!isAllowed) {
-      // Prompt user to allow notifications
-      await AwesomeNotifications().requestPermissionToSendNotifications();
-    }
-  });
+      if (!isAllowed) {
+        // Prompt user to allow notifications
+        await AwesomeNotifications().requestPermissionToSendNotifications();
+      }
+    });
 
     runApp(const MyApp());
   } catch (e) {
