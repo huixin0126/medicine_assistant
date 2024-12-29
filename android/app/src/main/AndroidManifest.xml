@@ -31,7 +31,7 @@
 
 
     <application
-        android:label="medicine_assistant_app"
+        android:label="Medicine Assistant"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true">

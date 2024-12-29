@@ -281,7 +281,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
       print("Chat session initialized with chatID: ${widget.chatID}");
       await _fetchChatHistory();
-
+      _scrollToBottom();
       // _loadMessages();
     } catch (e) {
       print("Error initializing chat session: $e");
@@ -341,6 +341,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       setState(() {
         _messages = messages;
       });
+      _scrollToBottom();
     } catch (e) {
       print("Error fetching chat history: $e");
     }
@@ -525,6 +526,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         _messageController.text = "";
         _spokenText = "";
       });
+      _scrollToBottom();
     } catch (e) {
       print("Error sending message: $e");
     }
@@ -698,6 +700,7 @@ Future<void> _pickImage(ImageSource source) async {
 
 // Call this method after a new message is added to scroll to the bottom
   void _scrollToBottom() async {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
     if (_scrollController.hasClients) {
       // Scroll to the bottom of the ListView
 
@@ -714,6 +717,8 @@ Future<void> _pickImage(ImageSource source) async {
         );
       }
     }
+  });
+    
   }
 
 // Call this when new messages are added or fetched
