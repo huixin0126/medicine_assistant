@@ -299,53 +299,79 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _fetchChatHistory() async {
-    if (widget.chatID.isEmpty) {
-      print('No chat ID provided.');
-      return;
-    }
+Future<void> _fetchChatHistory() async {
+  if (widget.chatID.isEmpty) {
+    print('No chat ID provided.');
+    return;
+  }
 
-    try {
-      print('Fetching chat history for chatID: ${widget.chatID}');
-      final messagesSnapshot = await _firestore
-          .collection('Chat')
-          .doc(widget.chatID)
-          .collection('Messages')
-          .orderBy('timestamp', descending: false)
-          .get();
+  try {
+    print('Fetching chat history for chatID: ${widget.chatID}');
+    final messagesSnapshot = await _firestore
+        .collection('Chat')
+        .doc(widget.chatID)
+        .collection('Messages')
+        .orderBy('timestamp', descending: false)
+        .get();
 
-      List<Map<String, dynamic>> messages = [];
+    List<Map<String, dynamic>> messages = [];
+    Map<String, Map<String, dynamic>> userCache = {}; // Cache for user details
 
-      for (var doc in messagesSnapshot.docs) {
-        Map<String, dynamic> messageData = doc.data() as Map<String, dynamic>;
+    for (var doc in messagesSnapshot.docs) {
+      Map<String, dynamic> messageData = doc.data() as Map<String, dynamic>;
 
-        // Fetch senderName if it's missing
-        if (messageData['senderName'] == null &&
-            messageData['senderID'] != null) {
-          DocumentSnapshot userSnapshot = await _firestore
-              .collection('User')
-              .doc(messageData['senderID'])
-              .get();
+      // Fetch sender details only if not already in the cache
+      if (messageData['senderID'] != null) {
+        String senderID = messageData['senderID'];
 
-          if (userSnapshot.exists) {
-            messageData['senderName'] =
-                userSnapshot['name'] ?? 'Unknown Sender';
-          } else {
-            messageData['senderName'] = 'Unknown Sender';
+        if (!userCache.containsKey(senderID)) {
+          try {
+            DocumentSnapshot userSnapshot =
+                await _firestore.collection('User').doc(senderID).get();
+
+            if (userSnapshot.exists) {
+              Map<String, dynamic> userData =
+                  userSnapshot.data() as Map<String, dynamic>;
+              userCache[senderID] = {
+                'name': userData['name'] ?? 'Unknown Sender',
+                'avatar': userData['avatar'] ?? null,
+              };
+            } else {
+              userCache[senderID] = {
+                'name': 'Unknown Sender',
+                'avatar': null,
+              };
+            }
+          } catch (e) {
+            print("Error fetching user data for senderID: $senderID, $e");
+            userCache[senderID] = {
+              'name': 'Unknown Sender',
+              'avatar': null,
+            };
           }
         }
 
-        messages.add(messageData);
+        // Use cached details
+        messageData['senderName'] = userCache[senderID]?['name'];
+        messageData['senderAvatar'] = userCache[senderID]?['avatar'];
+      } else {
+        messageData['senderName'] = 'Unknown Sender';
+        messageData['senderAvatar'] = null;
       }
 
-      setState(() {
-        _messages = messages;
-      });
-      _scrollToBottom();
-    } catch (e) {
-      print("Error fetching chat history: $e");
+      messages.add(messageData);
     }
+
+    setState(() {
+      _messages = messages;
+    });
+    _scrollToBottom();
+  } catch (e) {
+    print("Error fetching chat history: $e");
   }
+}
+
+
 
   Stream<List<Map<String, dynamic>>> getMessages(String chatID) {
     return _firestore
@@ -757,7 +783,7 @@ Future<void> _pickImage(ImageSource source) async {
             imageUrl: messageData['imageUrl'],
             isLeft: !isCurrentUser,
             context: context,
-            avatar: '', // Add avatar URL if you have one
+            avatar: messageData['senderAvatar'] ?? '', // Add avatar URL if you have one
           ),
         );
       },

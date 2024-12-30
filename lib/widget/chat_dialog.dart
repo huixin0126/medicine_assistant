@@ -18,8 +18,12 @@ Widget chatDialog({
     children: [
       if (isLeft) ...[
         CircleAvatar(
-          backgroundImage: avatar != null ? NetworkImage(avatar) : null,
-          child: avatar == null ? Icon(Icons.account_circle) : null,
+          backgroundImage: (avatar != null && avatar.isNotEmpty)
+              ? NetworkImage(avatar)
+              : null,
+          child: (avatar == null || avatar.isEmpty)
+              ? Icon(Icons.account_circle, size: 40)
+              : null,
         ),
         const SizedBox(width: 8),
       ],
@@ -31,7 +35,7 @@ Widget chatDialog({
             Align(
               alignment: isLeft ? Alignment.centerLeft : Alignment.centerRight,
               child: Text(
-                name,
+                name.isNotEmpty ? name : 'Unknown User',
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
@@ -42,6 +46,7 @@ Widget chatDialog({
             Container(
               padding: const EdgeInsets.all(10),
               margin: const EdgeInsets.symmetric(vertical: 4),
+              constraints: const BoxConstraints(maxWidth: 300),
               decoration: BoxDecoration(
                 color: isLeft ? Colors.grey[300] : Colors.blue[100],
                 borderRadius: BorderRadius.only(
@@ -54,19 +59,13 @@ Widget chatDialog({
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Display the local image file or image URL
                   if (image != null)
                     InkWell(
                       onTap: () {
-                        print('Image tapped!');
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) {
-                              return ImageViewerScreen(
-                                imageFile: image, // Passing image file to ImageViewerScreen
-                              );
-                            },
+                            builder: (context) => ImageViewerScreen(imageFile: image),
                           ),
                         );
                       },
@@ -85,15 +84,10 @@ Widget chatDialog({
                   if (imageUrl != null && image == null)
                     InkWell(
                       onTap: () {
-                        print('Image tapped!');
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) {
-                              return ImageViewerScreen(
-                                imageUrl: imageUrl, // Passing image URL to ImageViewerScreen
-                              );
-                            },
+                            builder: (context) => ImageViewerScreen(imageUrl: imageUrl),
                           ),
                         );
                       },
@@ -109,6 +103,20 @@ Widget chatDialog({
                               width: 200,
                               height: 200,
                               fit: BoxFit.cover,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes != null
+                                        ? loadingProgress.cumulativeBytesLoaded /
+                                            (loadingProgress.expectedTotalBytes ?? 1)
+                                        : null,
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(Icons.broken_image, size: 200);
+                              },
                             ),
                     ),
                   if (message != null && message.isNotEmpty) ...[
@@ -127,9 +135,14 @@ Widget chatDialog({
       if (!isLeft) ...[
         const SizedBox(width: 8),
         CircleAvatar(
-          backgroundImage: avatar != null ? NetworkImage(avatar) : null,
-          child: avatar == null ? Icon(Icons.account_circle) : null,
+          backgroundImage: (avatar != null && avatar.isNotEmpty)
+              ? NetworkImage(avatar)
+              : null,
+          child: (avatar == null || avatar.isEmpty)
+              ? Icon(Icons.account_circle, size: 40)
+              : null,
         ),
+
       ],
     ],
   );
