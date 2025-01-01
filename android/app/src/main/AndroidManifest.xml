@@ -34,8 +34,8 @@
         android:label="Medicine Assistant"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:enableOnBackInvokedCallback="true">
-
+        android:enableOnBackInvokedCallback="true"
+        android:largeHeap="true">
        
         <activity
             android:name=".MainActivity"

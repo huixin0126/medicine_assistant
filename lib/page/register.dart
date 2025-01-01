@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:core';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +20,14 @@ class RegisterPage extends StatefulWidget {
   @override
   _RegisterPageState createState() => _RegisterPageState();
 }
+
+Future<File> resizeImageIsolate(File imageFile) async {
+    final originalImage = img.decodeImage(imageFile.readAsBytesSync());
+    final resizedImage = img.copyResize(originalImage!, width: 800);
+    final resizedImageBytes = Uint8List.fromList(img.encodeJpg(resizedImage));
+    final resizedImageFile = File(imageFile.path)..writeAsBytesSync(resizedImageBytes);
+    return resizedImageFile;
+  }
 
 class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
@@ -93,60 +102,73 @@ void dispose() {
 }
 
 Future<void> _openCamera() async {
-  // Open the camera page and capture the image
-  final capturedImage = await Navigator.push<File>(
-    context,
-    MaterialPageRoute(
-      builder: (context) => CameraRegisterPage(
-        onCapture: (File image) {
-          setState(() {
-            _capturedImage = image;
-          });
-        },
+  try {
+    final capturedImage = await Navigator.push<File>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CameraRegisterPage(
+          onCapture: (File image) {}, // Empty function since we're not using it
+        ),
       ),
-    ),
-  );
+    );
 
-  if (capturedImage != null) {
-    try {
-      // Delay the image resizing operation to avoid blocking the main thread
-      await Future.delayed(Duration(milliseconds: 100)); // Adjust delay as necessary
-
-      // Resize the captured image
-      final resizedImage = await _resizeImage(capturedImage);
-
-      // Process the resized image for face detection
-      final inputImage = InputImage.fromFile(resizedImage);
-      final faces = await _faceDetector.processImage(inputImage);
-
-      // Update the state with the detected faces
-      setState(() {
-        _capturedImage = resizedImage;
-        _detectedFaces = faces;
-      });
-
-      if (faces.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No faces detected. Please try again.')),
+    if (capturedImage != null && mounted) {
+      try {
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return const Center(child: CircularProgressIndicator());
+          },
         );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Faces detected!')),
-        );
+
+        // Process image
+        final inputImage = InputImage.fromFile(capturedImage);
+        final faces = await _faceDetector.processImage(inputImage);
+
+        // Hide loading indicator
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+
+        if (mounted) {
+          setState(() {
+            _capturedImage = capturedImage;
+            _detectedFaces = faces;
+          });
+
+          if (faces.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No faces detected. Please try again.')),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Face detected successfully!')),
+            );
+          }
+        }
+      } catch (e) {
+        // Hide loading indicator if showing
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error processing image: ${e.toString()}')),
+          );
+        }
       }
-    } catch (e) {
-      print('Error during face detection: $e');
+    }
+  } catch (e) {
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Face detection failed: $e')),
+        SnackBar(content: Text('Error capturing image: ${e.toString()}')),
       );
     }
-  } else {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No image captured. Please try again.')),
-    );
   }
 }
-
 
 //  Future<void> _captureFace() async {
 //   if (!_isCameraInitialized) return;

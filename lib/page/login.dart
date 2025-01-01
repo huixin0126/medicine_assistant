@@ -526,7 +526,7 @@ Future<void> _handleFaceLogin() async {
           // Process the face data if it's valid
           double similarity = _calculateFaceSimilarity(currentLandmarks, storedFaceData);
           print('Similarity for ${doc.id}: $similarity');
-          if (similarity > 0.8 && similarity > bestMatch) {
+          if (similarity > 80 && similarity > bestMatch) {
             bestMatch = similarity;
             matchedUserId = doc.id;
           }
@@ -717,47 +717,119 @@ Map<String, List<int>>? _extractFaceLandmarks(Face face) {
     }
   }
 
+// double _calculateFaceSimilarity(
+//     Map<String, List<int>> currentLandmarks,
+//     Map<String, dynamic> storedFaceData,
+//     {int imageWidth = 800, int imageHeight = 800}) {
+//   double totalDistance = 0;
+//   int featureCount = 0;
+
+//   try {
+//     for (var key in storedFaceData.keys) {
+//       if (currentLandmarks.containsKey(key) &&
+//           storedFaceData[key] is List<dynamic>) {
+//         final currentPoints = currentLandmarks[key]!;
+//         final storedPoints = List<int>.from(storedFaceData[key]);
+
+//         // Normalize points
+//         final normalizedCurrent = currentPoints.map((p) => p.toDouble() / imageWidth).toList();
+//         final normalizedStored = storedPoints.map((p) => p.toDouble() / imageWidth).toList();
+
+//         // Ensure both points have the same length
+//         if (normalizedCurrent.length == normalizedStored.length) {
+//           for (int i = 0; i < normalizedCurrent.length; i++) {
+//             totalDistance += (normalizedCurrent[i] - normalizedStored[i]) *
+//                 (normalizedCurrent[i] - normalizedStored[i]);
+//           }
+//           featureCount++;
+//         }
+//       }
+//     }
+//   } catch (e) {
+//     print('Error in similarity calculation: $e');
+//     return 0.0; // Return 0.0 if there’s any error
+//   }
+
+//   // Avoid division by zero
+//   if (featureCount == 0) return 0.0;
+
+//   // Calculate the final similarity score
+//   double averageDistance = totalDistance / featureCount;
+//   double similarity = (1 - averageDistance.clamp(0.0, 1.0)) * 100; // Scale to percentage
+//   return similarity;
+// }
+
 double _calculateFaceSimilarity(
-    Map<String, List<int>> currentLandmarks,
-    Map<String, dynamic> storedFaceData,
-    {int imageWidth = 800, int imageHeight = 800}) {
-  double totalDistance = 0;
-  int featureCount = 0;
+  Map<String, List<int>> currentLandmarks,
+  Map<String, dynamic> storedFaceData,
+  {int imageWidth = 800, int imageHeight = 800}) {
+  double weightedDistanceSum = 0.0;
+  double totalWeight = 0.0;
 
   try {
-    for (var key in storedFaceData.keys) {
-      if (currentLandmarks.containsKey(key) &&
-          storedFaceData[key] is List<dynamic>) {
+    final featureWeights = {
+      'leftEye': 2.0,
+      'rightEye': 2.0,
+      'nose': 1.5,
+      'leftMouth': 1.0,
+      'rightMouth': 1.0
+    };
+
+    // Validate input
+    if (currentLandmarks.isEmpty || storedFaceData.isEmpty) {
+      print("Empty or missing landmarks data.");
+      return 0.0;
+    }
+
+    for (var key in featureWeights.keys) {
+      if (currentLandmarks.containsKey(key) && storedFaceData.containsKey(key)) {
         final currentPoints = currentLandmarks[key]!;
         final storedPoints = List<int>.from(storedFaceData[key]);
 
-        // Normalize points
-        final normalizedCurrent = currentPoints.map((p) => p.toDouble() / imageWidth).toList();
-        final normalizedStored = storedPoints.map((p) => p.toDouble() / imageWidth).toList();
+        // Normalize coordinates to a range [0, 1]
+        final normalizedCurrentX = currentPoints[0].toDouble() / imageWidth;
+        final normalizedCurrentY = currentPoints[1].toDouble() / imageHeight;
 
-        // Ensure both points have the same length
-        if (normalizedCurrent.length == normalizedStored.length) {
-          for (int i = 0; i < normalizedCurrent.length; i++) {
-            totalDistance += (normalizedCurrent[i] - normalizedStored[i]) *
-                (normalizedCurrent[i] - normalizedStored[i]);
-          }
-          featureCount++;
-        }
+        final normalizedStoredX = storedPoints[0].toDouble() / imageWidth;
+        final normalizedStoredY = storedPoints[1].toDouble() / imageHeight;
+
+        // Calculate Euclidean distance
+        final distance = sqrt(
+          pow(normalizedCurrentX - normalizedStoredX, 2) +
+              pow(normalizedCurrentY - normalizedStoredY, 2),
+        );
+
+        // Apply weight to the distance
+        final weight = featureWeights[key] ?? 1.0;
+        weightedDistanceSum += weight * distance;
+        totalWeight += weight;
+      } else {
+        print("Key $key is missing in currentLandmarks or storedFaceData.");
       }
     }
   } catch (e) {
     print('Error in similarity calculation: $e');
-    return 0.0; // Return 0.0 if there’s any error
+    return 0.0;
   }
 
-  // Avoid division by zero
-  if (featureCount == 0) return 0.0;
+  if (totalWeight == 0) {
+    print("Total weight is zero. No valid features to compare.");
+    return 0.0;
+  }
 
-  // Calculate the final similarity score
-  double averageDistance = totalDistance / featureCount;
-  double similarity = (1 - averageDistance.clamp(0.0, 1.0)) * 100; // Scale to percentage
+  // Normalize the similarity score
+  double averageWeightedDistance = weightedDistanceSum / totalWeight;
+  double similarity = 1 - averageWeightedDistance; // Normalize to [0, 1]
+
+  // Clamp similarity to [0, 100]
+  similarity = similarity.clamp(0.0, 1.0) * 100;
+
+  print("Weighted Distance Sum: $weightedDistanceSum, Total Weight: $totalWeight, Similarity: $similarity");
+
   return similarity;
 }
+
+
 
 // Example: Preprocessing function to resize and normalize image
 Uint8List preprocessImage(Uint8List imageData) {
