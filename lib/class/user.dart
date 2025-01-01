@@ -5,7 +5,7 @@ class User {
   final String phoneNo;
   final String? deviceToken;
   final String? emergencyContact;
-  final String? faceData;
+  final Map<String, dynamic>? faceData;
   final List<String> guardianIDs;
   final List<String> seniorIDs;
   final String? avatar; 
