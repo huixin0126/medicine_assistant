@@ -171,41 +171,6 @@ Future<void> _openCamera() async {
   }
 }
 
-//  Future<void> _captureFace() async {
-//   if (!_isCameraInitialized) return;
-
-//   try {
-//     // Capture the image from the camera
-//     final image = await _cameraController.takePicture();
-//     final inputImage = InputImage.fromFilePath(image.path);
-
-//     // Process the image with the face detector
-//     final faces = await _faceDetector.processImage(inputImage);
-
-//     if (faces.isEmpty) {
-//       // Notify the user if no face is detected
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text('No face detected. Please try again.')),
-//       );
-//       return;
-//     }
-
-//     // Update the state with the captured image and detected faces
-//     setState(() {
-//       _capturedImage = File(image.path);
-//       _detectedFaces = faces;
-//     });
-
-//     ScaffoldMessenger.of(context).showSnackBar(
-//       SnackBar(content: Text('Face captured successfully.')),
-//     );
-//   } catch (e) {
-//     ScaffoldMessenger.of(context).showSnackBar(
-//       SnackBar(content: Text('Failed to capture face: $e')),
-//     );
-//   }
-// }
-
 Future<void> _handleRegister() async {
   if (_formKey.currentState!.validate()) {
     if (_capturedImage == null || _detectedFaces == null || _detectedFaces!.isEmpty) {

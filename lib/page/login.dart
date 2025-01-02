@@ -367,58 +367,6 @@ void _handleLogin() async {
   }
 }
 
-//   void _handleFaceLogin() async {
-//   try {
-//     if (!_isCameraInitialized) {
-//       throw Exception("Camera not initialized");
-//     }
-
-//     // Capture the image from the camera
-//     final image = await _cameraController.takePicture();
-
-//     // TODO: Implement face recognition logic here
-//     // Example: Send the image to your face recognition backend or use a local model to authenticate the user
-
-//     // Simulate a successful face recognition response with a recognized Firebase UID
-//     String recognizedUID = "exampleFirebaseUID"; // Replace with actual UID after recognition
-
-//     // Fetch user details from Firestore using the recognized UID
-//     DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
-//         .collection('User')
-//         .doc(recognizedUID)
-//         .get();
-
-//     if (userSnapshot.exists) {
-//       // Map Firestore data to User object
-//       User user = User(
-//         userID: userSnapshot['userID'], // Use the userID from Firestore
-//         name: userSnapshot['name'],
-//         email: userSnapshot['email'],
-//         phoneNo: userSnapshot['phoneNo'],
-//         faceData: userSnapshot['faceData'] ?? '',
-//         guardianIDs: List<String>.from(userSnapshot['guardianIDs'] ?? []),
-//         seniorIDs: List<String>.from(userSnapshot['seniorIDs'] ?? []),
-//       );
-
-//       // Navigate to HomePage with the fetched user data
-//       Navigator.pushReplacement(
-//         context,
-//         MaterialPageRoute(
-//           builder: (context) => HomePage(userID: user.userID, user: user),
-//         ),
-//       );
-//     } else {
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text('Face authentication successful, but user data not found.')),
-//       );
-//     }
-//   } catch (e) {
-//     ScaffoldMessenger.of(context).showSnackBar(
-//       SnackBar(content: Text('Face authentication failed: $e')),
-//     );
-//   }
-// }
-
  Future<File> _resizeImage(File imageFile) async {
   final originalImage = img.decodeImage(imageFile.readAsBytesSync());
   final resizedImage = img.copyResize(originalImage!, width: 800);
