@@ -429,6 +429,76 @@ void _handleLogin() async {
   return resizedImageFile;
 }
 
+// Future<void> _handleFaceLogin() async {
+//   if (!mounted || _capturedImage == null || _isProcessing) return;
+//   setState(() => _isProcessing = true);
+
+//   try {
+//     _showLoadingDialog();
+    
+//     // Initialize face auth handler
+//     final faceAuthHandler = FaceAuthHandler();
+//     await faceAuthHandler.initialize();
+
+//     // Query users from Firestore
+//     final querySnapshot = await FirebaseFirestore.instance
+//         .collection('User')
+//         .get()
+//         .timeout(Duration(seconds: 10));
+
+//     bool foundMatch = false;
+//     User? matchedUser;
+
+//     for (var doc in querySnapshot.docs) {
+//       final data = doc.data();
+//       final storedEmbedding = data['faceEmbedding'];
+      
+//       if (storedEmbedding != null) {
+//         final isMatch = await faceAuthHandler.verifyFace(
+//           List<double>.from(storedEmbedding),
+//           _capturedImage!
+//         );
+
+//         if (isMatch) {
+//           foundMatch = true;
+//           matchedUser = User(
+//             userID: data['userID'] ?? '',
+//             name: data['name'] ?? '',
+//             email: data['email'] ?? '',
+//             phoneNo: data['phoneNo'] ?? '',
+//             guardianIDs: List<String>.from(data['guardianIDs'] ?? []),
+//             seniorIDs: List<String>.from(data['seniorIDs'] ?? []),
+//           );
+//           break;
+//         }
+//       }
+//     }
+
+//     if (!foundMatch || matchedUser == null) {
+//       throw Exception("Face not recognized. Please try again or use email login.");
+//     }
+
+//     if (mounted) {
+//       Navigator.pushReplacement(
+//         context,
+//         MaterialPageRoute(
+//           builder: (context) => HomePage(userID: matchedUser!.userID, user: matchedUser),
+//         ),
+//       );
+//     }
+
+//   } catch (e) {
+//     if (mounted) {
+//       _showError(e.toString());
+//     }
+//   } finally {
+//     if (mounted) {
+//       _dismissLoadingDialog();
+//       setState(() => _isProcessing = false);
+//     }
+//   }
+// }
+
 
 Future<void> _handleFaceLogin() async {
   if (!mounted || _capturedImage == null || _isProcessing) return;
@@ -526,7 +596,7 @@ Future<void> _handleFaceLogin() async {
           // Process the face data if it's valid
           double similarity = _calculateFaceSimilarity(currentLandmarks, storedFaceData);
           print('Similarity for ${doc.id}: $similarity');
-          if (similarity > 80 && similarity > bestMatch) {
+          if (similarity > 85 && similarity > bestMatch) {
             bestMatch = similarity;
             matchedUserId = doc.id;
           }
@@ -763,73 +833,123 @@ double _calculateFaceSimilarity(
   Map<String, List<int>> currentLandmarks,
   Map<String, dynamic> storedFaceData,
   {int imageWidth = 800, int imageHeight = 800}) {
-  double weightedDistanceSum = 0.0;
-  double totalWeight = 0.0;
+  
+  // Enhanced feature weights with more emphasis on distinctive features
+  final featureWeights = {
+    'leftEye': 2.5,
+    'rightEye': 2.5,
+    'nose': 2.0,
+    'leftMouth': 1.5,
+    'rightMouth': 1.5
+  };
 
   try {
-    final featureWeights = {
-      'leftEye': 2.0,
-      'rightEye': 2.0,
-      'nose': 1.5,
-      'leftMouth': 1.0,
-      'rightMouth': 1.0
-    };
+    // Calculate face center and scale for both faces
+    var currentCenter = _calculateFaceCenter(currentLandmarks);
+    var storedCenter = _calculateFaceCenter(Map<String, List<int>>.from(
+      storedFaceData.map((key, value) => MapEntry(key, List<int>.from(value)))
+    ));
 
-    // Validate input
-    if (currentLandmarks.isEmpty || storedFaceData.isEmpty) {
-      print("Empty or missing landmarks data.");
+    // Calculate eye distance for scale normalization
+    double currentEyeDistance = _calculateEyeDistance(currentLandmarks);
+    double storedEyeDistance = _calculateEyeDistance(Map<String, List<int>>.from(
+      storedFaceData.map((key, value) => MapEntry(key, List<int>.from(value)))
+    ));
+
+    double totalScore = 0.0;
+    double totalWeight = 0.0;
+
+    // Compare relative positions of facial features
+    for (var key in featureWeights.keys) {
+      if (!currentLandmarks.containsKey(key) || !storedFaceData.containsKey(key)) {
+        continue;
+      }
+
+      var currentPoints = currentLandmarks[key]!;
+      var storedPoints = List<int>.from(storedFaceData[key]);
+
+      // Calculate relative positions
+      var currentRelative = _calculateRelativePosition(
+        currentPoints, currentCenter, currentEyeDistance);
+      var storedRelative = _calculateRelativePosition(
+        storedPoints, storedCenter, storedEyeDistance);
+
+      // Calculate feature similarity with enhanced metrics
+      double featureSimilarity = _calculateFeatureSimilarity(
+        currentRelative, storedRelative);
+
+      double weight = featureWeights[key]!;
+      totalScore += featureSimilarity * weight;
+      totalWeight += weight;
+    }
+
+    if (totalWeight == 0) return 0.0;
+
+    // Calculate final similarity score
+    double similarity = (totalScore / totalWeight) * 100;
+    
+    // Apply stricter threshold for matching
+    if (similarity < 85.0) {  // Increased threshold
       return 0.0;
     }
 
-    for (var key in featureWeights.keys) {
-      if (currentLandmarks.containsKey(key) && storedFaceData.containsKey(key)) {
-        final currentPoints = currentLandmarks[key]!;
-        final storedPoints = List<int>.from(storedFaceData[key]);
+    return similarity;
 
-        // Normalize coordinates to a range [0, 1]
-        final normalizedCurrentX = currentPoints[0].toDouble() / imageWidth;
-        final normalizedCurrentY = currentPoints[1].toDouble() / imageHeight;
-
-        final normalizedStoredX = storedPoints[0].toDouble() / imageWidth;
-        final normalizedStoredY = storedPoints[1].toDouble() / imageHeight;
-
-        // Calculate Euclidean distance
-        final distance = sqrt(
-          pow(normalizedCurrentX - normalizedStoredX, 2) +
-              pow(normalizedCurrentY - normalizedStoredY, 2),
-        );
-
-        // Apply weight to the distance
-        final weight = featureWeights[key] ?? 1.0;
-        weightedDistanceSum += weight * distance;
-        totalWeight += weight;
-      } else {
-        print("Key $key is missing in currentLandmarks or storedFaceData.");
-      }
-    }
   } catch (e) {
-    print('Error in similarity calculation: $e');
+    print('Error in face similarity calculation: $e');
     return 0.0;
   }
-
-  if (totalWeight == 0) {
-    print("Total weight is zero. No valid features to compare.");
-    return 0.0;
-  }
-
-  // Normalize the similarity score
-  double averageWeightedDistance = weightedDistanceSum / totalWeight;
-  double similarity = 1 - averageWeightedDistance; // Normalize to [0, 1]
-
-  // Clamp similarity to [0, 100]
-  similarity = similarity.clamp(0.0, 1.0) * 100;
-
-  print("Weighted Distance Sum: $weightedDistanceSum, Total Weight: $totalWeight, Similarity: $similarity");
-
-  return similarity;
 }
 
+List<double> _calculateFaceCenter(Map<String, List<int>> landmarks) {
+  double sumX = 0, sumY = 0;
+  int count = 0;
+  
+  landmarks.values.forEach((points) {
+    sumX += points[0];
+    sumY += points[1];
+    count++;
+  });
+  
+  return [sumX / count, sumY / count];
+}
 
+double _calculateEyeDistance(Map<String, List<int>> landmarks) {
+  var leftEye = landmarks['leftEye']!;
+  var rightEye = landmarks['rightEye']!;
+  
+  return sqrt(
+    pow(leftEye[0] - rightEye[0], 2) +
+    pow(leftEye[1] - rightEye[1], 2)
+  );
+}
+
+List<double> _calculateRelativePosition(
+  List<int> points,
+  List<double> center,
+  double eyeDistance) {
+  
+  return [
+    (points[0] - center[0]) / eyeDistance,
+    (points[1] - center[1]) / eyeDistance
+  ];
+}
+
+double _calculateFeatureSimilarity(
+  List<double> current,
+  List<double> stored) {
+  
+  // Enhanced similarity calculation using both position and angle
+  double positionDiff = sqrt(
+    pow(current[0] - stored[0], 2) +
+    pow(current[1] - stored[1], 2)
+  );
+  
+  // Convert position difference to similarity score
+  double similarity = exp(-positionDiff);
+  
+  return similarity;
+}
 
 // Example: Preprocessing function to resize and normalize image
 Uint8List preprocessImage(Uint8List imageData) {

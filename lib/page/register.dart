@@ -15,6 +15,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:medicine_assistant_app/page/cameraRegister.dart';
 import 'package:medicine_assistant_app/page/login.dart';
+import 'package:medicine_assistant_app/service/facenet_service.dart';
 
 class RegisterPage extends StatefulWidget {
   @override
@@ -305,6 +306,91 @@ Future<void> _handleRegister() async {
   }
 }
 
+// Future<void> _handleRegister() async {
+//   if (!_formKey.currentState!.validate()) return;
+  
+//   if (_capturedImage == null || _detectedFaces == null || _detectedFaces!.isEmpty) {
+//     ScaffoldMessenger.of(context).showSnackBar(
+//       const SnackBar(content: Text('Please capture your face first')),
+//     );
+//     return;
+//   }
+
+//   _formKey.currentState!.save();
+
+//   try {
+//     // Show loading indicator
+//     showDialog(
+//       context: context,
+//       barrierDismissible: false,
+//       builder: (context) => const Center(child: CircularProgressIndicator()),
+//     );
+//
+//     // Create user account
+//     final userCredential = await f_User.FirebaseAuth.instance
+//         .createUserWithEmailAndPassword(email: _email, password: _password);
+//     final uid = userCredential.user!.uid;
+
+//     // Get device token
+//     final deviceToken = await FirebaseMessaging.instance.getToken() ?? '';
+
+//     // Upload face image
+//     final storageRef = FirebaseStorage.instance
+//         .ref()
+//         .child('face_images/$uid.jpg');
+//     final resizedImage = await compute(resizeImageIsolate, _capturedImage!);
+//     final uploadTask = storageRef.putFile(resizedImage);
+//     final snapshot = await uploadTask;
+//     final imageUrl = await snapshot.ref.getDownloadURL();
+
+//     // Generate face embedding
+//     final faceAuthHandler = FaceAuthHandler();
+//     await faceAuthHandler.initialize();
+//     final faceData = await faceAuthHandler.registerFace(_capturedImage!);
+    
+//     if (faceData == null) {
+//       throw Exception('Failed to generate face embedding');
+//     }
+
+//     // Save user data
+//     await FirebaseFirestore.instance
+//         .collection('User')
+//         .doc(uid)
+//         .set({
+//       'avatar': '',
+//       'deviceToken': deviceToken,
+//       'email': _email,
+//       'faceImageUrl': imageUrl,
+//       'faceEmbedding': faceData['embedding'],
+//       'name': _name,
+//       'phoneNo': _phoneNo,
+//       'userID': uid,
+//       'emergencyContact': '',
+//       'seniorIDs': [],
+//       'guardianIDs': [],
+//     });
+
+//     // Navigate to login
+//     if (mounted) {
+//       Navigator.pop(context); // Remove loading
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         const SnackBar(content: Text('Registration successful! Please login.')),
+//       );
+//       await Future.delayed(const Duration(seconds: 1));
+//       Navigator.pushReplacement(
+//         context,
+//         MaterialPageRoute(builder: (context) => LoginPage()),
+//       );
+//     }
+//   } catch (e) {
+//     if (mounted) {
+//       Navigator.pop(context); // Remove loading
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         SnackBar(content: Text('Registration failed: ${e.toString()}')),
+//       );
+//     }
+//   }
+// }
 
   void handleCapturedImage(XFile image) {
   // Process the captured image
@@ -369,3 +455,36 @@ Future<void> _handleRegister() async {
     );
   }
 }
+
+// class FaceAuthHandler {
+//   final FaceNetService _faceNetService = FaceNetService();
+//   static const double DISTANCE_THRESHOLD = 1.0; // Adjust based on testing
+
+//   Future<void> initialize() async {
+//     await _faceNetService.loadModel();
+//   }
+
+//   Future<Map<String, dynamic>?> registerFace(File imageFile) async {
+//     try {
+//       List<double> embedding = _faceNetService.getFaceEmbedding(imageFile) as List<double>;
+//       return {
+//         'embedding': embedding,
+//         'imageUrl': imageFile.path,
+//       };
+//     } catch (e) {
+//       print('Error registering face: $e');
+//       return null;
+//     }
+//   }
+
+//   Future<bool> verifyFace(List<double> storedEmbedding, File currentImage) async {
+//     try {
+//       List<double> currentEmbedding = _faceNetService.getFaceEmbedding(currentImage) as List<double>;
+//       double distance = _faceNetService.euclideanDistance(storedEmbedding, currentEmbedding);
+//       return distance < DISTANCE_THRESHOLD;
+//     } catch (e) {
+//       print('Error verifying face: $e');
+//       return false;
+//     }
+//   }
+// }

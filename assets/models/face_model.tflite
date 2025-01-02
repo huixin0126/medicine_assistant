@@ -1,18 +1,25 @@
 import tensorflow as tf
 
-# Set the path to the extracted model directory
-saved_model_dir = r"C:\Users\User\Documents\Degree\Sem 2\BITU3923 WORKSHOP II\20180402-114759\20180402-114759.pb"
+# Set the path to the extracted model directory (not directly to the .pb file)
+saved_model_dir = r"C:\Users\User\Documents\Degree\Sem 2\BITU3923 WORKSHOP II\20180402-114759"
 
-# Load the SavedModel (TensorFlow model)
-model = tf.saved_model.load(saved_model_dir)
+# Load the SavedModel
+try:
+    model = tf.saved_model.load(saved_model_dir)
+    print("Model loaded successfully.")
+except Exception as e:
+    print(f"Error loading model: {e}")
+    exit()
 
 # Convert the model to TensorFlow Lite format
-converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
-tflite_model = converter.convert()
+try:
+    converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
+    tflite_model = converter.convert()
 
-# Save the model to a .tflite file
-tflite_model_path = 'models/face_model.tflite'  # You can change the path if needed
-with open(tflite_model_path, 'wb') as f:
-    f.write(tflite_model)
-
-print(f'TensorFlow Lite model saved to: {tflite_model_path}')
+    # Save the model to a .tflite file
+    tflite_model_path = 'models/face_model.tflite'  # Update as needed
+    with open(tflite_model_path, 'wb') as f:
+        f.write(tflite_model)
+    print(f"TensorFlow Lite model saved to: {tflite_model_path}")
+except Exception as e:
+    print(f"Error during conversion: {e}")
