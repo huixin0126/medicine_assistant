@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:medicine_assistant_app/class/user.dart';
 import 'package:medicine_assistant_app/page/login.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ProfilePage extends StatefulWidget {
   final String userID;
@@ -181,14 +182,32 @@ Future<void> _updateProfile() async {
             },
           ),
           IconButton(
-            icon: Icon(Icons.logout),
-            onPressed: () {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => LoginPage()),
-                (route) => false,
-              );
-            },
-          ),
+  icon: Icon(Icons.logout),
+  onPressed: () async {
+    try {
+      // Clear all stored login states
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('userID');
+      await prefs.remove('keepSignedIn');
+      await prefs.remove('faceLoginUserID');
+      await prefs.remove('keepSignedInFace');
+
+      // Navigate to login page and clear navigation stack
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => LoginPage()),
+        (route) => false,
+      );
+    } catch (e) {
+      // Show error if clearing preferences fails
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error logging out: ${e.toString()}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  },
+)
         ],
       ),
       body: _currentUser == null

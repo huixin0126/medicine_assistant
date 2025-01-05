@@ -192,7 +192,7 @@ Future<List<Map<String, dynamic>>> _fetchConnectedUsers(String userId) async {
     users.add({
       'userID': 'chatbot',
       'userName': 'Chatbot Assistant',
-      'userAvatar': 'assets/chatbot_avatar.png', // Update with your chatbot avatar
+      'userAvatar': 'https://img.freepik.com/free-vector/chatbot-chat-message-vectorart_78370-4104.jpg?t=st=1735965751~exp=1735969351~hmac=dbd93c542587c1428a2570cd9d1bd1501e1a9f4151136d3b840e2b72af07a098&w=740', // Update with your chatbot avatar
       'chatID': '',
     });
 

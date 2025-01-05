@@ -32,7 +32,7 @@ class _ChatbotapiPageState extends State<ChatbotapiPage> with TickerProviderStat
   {
     'sender': "Bot",
     'message': "Hi! Ask me a question.",
-    'avatar': "https://xiaoxintv.cc/template/mytheme/statics/image/20211025/25ef538a6.png",
+    'avatar': "https://img.freepik.com/free-vector/chatbot-chat-message-vectorart_78370-4104.jpg?t=st=1735965751~exp=1735969351~hmac=dbd93c542587c1428a2570cd9d1bd1501e1a9f4151136d3b840e2b72af07a098&w=740",
     'image': null, // Initially no image
   }
 ];
@@ -376,7 +376,7 @@ Future<void> _sendMessage(String message, {bool isFromChatbot = false}) async {
         'sender': isFromChatbot ? 'Bot' : 'You',
         'message': message,
         'avatar': isFromChatbot
-            ? "https://xiaoxintv.cc/template/mytheme/statics/image/20211025/25ef538a6.png"
+            ? "https://img.freepik.com/free-vector/chatbot-chat-message-vectorart_78370-4104.jpg?t=st=1735965751~exp=1735969351~hmac=dbd93c542587c1428a2570cd9d1bd1501e1a9f4151136d3b840e2b72af07a098&w=740"
             : "https://example.com/user-avatar.png", // Adjust user avatar URL if needed
         'image': _image,
         'timestamp': FieldValue.serverTimestamp(),
@@ -472,7 +472,7 @@ Future<void> _sendChatbotMessage(String conversationID, String userMessage) asyn
     _messages.add({
       'sender': 'Bot',
       'message': '', // Empty at first, to be updated dynamically
-      'avatar': "https://xiaoxintv.cc/template/mytheme/statics/image/20211025/25ef538a6.png",
+      'avatar': "https://img.freepik.com/free-vector/chatbot-chat-message-vectorart_78370-4104.jpg?t=st=1735965751~exp=1735969351~hmac=dbd93c542587c1428a2570cd9d1bd1501e1a9f4151136d3b840e2b72af07a098&w=740",
       'image': null,
       'timestamp': FieldValue.serverTimestamp(),
     });

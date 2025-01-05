@@ -19,6 +19,7 @@ import 'package:medicine_assistant_app/page/indexhome.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -28,10 +29,10 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isFaceLogin = false;
+  bool _keepSignedIn = false;
   late CameraController _cameraController;
   bool _isCameraInitialized = false;
   File? _capturedImage;
-
   String _email = '';
   String _password = '';
   bool _isProcessing = false;
@@ -49,6 +50,95 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     _initializeCamera();
+    _checkExistingLogin();
+    _checkExistingFaceLogin();
+  }
+
+  Future<void> _checkExistingLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userID = prefs.getString('userID');
+    final keepSignedIn = prefs.getBool('keepSignedIn') ?? false;
+
+    if (keepSignedIn && userID != null) {
+      try {
+        // Fetch user data from Firestore
+        DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+            .collection('User')
+            .doc(userID)
+            .get();
+
+        if (userSnapshot.exists) {
+          final userData = userSnapshot.data() as Map<String, dynamic>;
+          User user = User.fromJson(userData);
+
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => HomePage(userID: user.userID, user: user),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        print('Error checking existing login: $e');
+        // Clear preferences if there's an error
+        await prefs.clear();
+      }
+    }
+  }
+
+  Future<void> _saveLoginState(String userID) async {
+    if (_keepSignedIn) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('userID', userID);
+      await prefs.setBool('keepSignedIn', true);
+    }
+  }
+
+  Future<void> _checkExistingFaceLogin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userID = prefs.getString('faceLoginUserID');
+      final keepSignedIn = prefs.getBool('keepSignedInFace') ?? false;
+
+      if (keepSignedIn && userID != null) {
+        // Fetch user data from Firestore
+        DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+            .collection('User')
+            .doc(userID)
+            .get();
+
+        if (userSnapshot.exists) {
+          final userData = userSnapshot.data() as Map<String, dynamic>;
+          User user = User.fromJson(userData);
+
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => HomePage(userID: user.userID, user: user),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      print('Error checking existing face login: $e');
+      // Clear preferences if there's an error
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('faceLoginUserID');
+      await prefs.remove('keepSignedInFace');
+    }
+  }
+
+  // Add this method to save face login session
+  Future<void> _saveFaceLoginState(String userID) async {
+    if (_keepSignedIn) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('faceLoginUserID', userID);
+      await prefs.setBool('keepSignedInFace', true);
+    }
   }
 
   @override
@@ -124,10 +214,30 @@ class _LoginPageState extends State<LoginPage> {
             },
             onSaved: (value) => _password = value!,
           ),
+          SizedBox(height: 16),
+          Row(
+            children: [
+              Checkbox(
+                value: _keepSignedIn,
+                onChanged: (bool? value) {
+                  setState(() {
+                    _keepSignedIn = value ?? false;
+                  });
+                },
+              ),
+              Text('Keep me signed in'),
+            ],
+          ),
           SizedBox(height: 24),
           ElevatedButton(
-            onPressed: _handleLogin,
-            child: Text('Login'),
+            onPressed: _isProcessing ? null : _handleLogin,
+            child: _isProcessing
+                ? SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text('Login'),
             style: ElevatedButton.styleFrom(
               minimumSize: Size(double.infinity, 48),
             ),
@@ -138,39 +248,51 @@ class _LoginPageState extends State<LoginPage> {
   }
 
 Widget _buildFaceLogin() {
-  return Column(
-    children: [
-      if (_capturedImage != null)
-        Container(
-          height: 200,
-          width: double.infinity,
-          child: Image.file(
-            _capturedImage!,
-            fit: BoxFit.cover,
+    return Column(
+      children: [
+        if (_capturedImage != null)
+          Container(
+            height: 200,
+            width: double.infinity,
+            child: Image.file(
+              _capturedImage!,
+              fit: BoxFit.cover,
+            ),
+          ),
+        SizedBox(height: 16),
+        ElevatedButton(
+          onPressed: _captureImage,
+          child: Text('Take Picture'),
+          style: ElevatedButton.styleFrom(
+            minimumSize: Size(double.infinity, 48),
           ),
         ),
-      SizedBox(height: 16),
-      ElevatedButton(
-        onPressed: _captureImage,
-        child: Text('Take Picture'),
-        style: ElevatedButton.styleFrom(
-          minimumSize: Size(double.infinity, 48),
+        SizedBox(height: 16),
+        Row(
+          children: [
+            Checkbox(
+              value: _keepSignedIn,
+              onChanged: (bool? value) {
+                setState(() {
+                  _keepSignedIn = value ?? false;
+                });
+              },
+            ),
+            Text('Keep me signed in'),
+          ],
         ),
-      ),
-      SizedBox(height: 16),
-      ElevatedButton(
-        onPressed: _capturedImage != null ? _handleFaceLogin : null,
-        child: Text('Login with Face'),
-        style: ElevatedButton.styleFrom(
-          minimumSize: Size(double.infinity, 48),
-          // Button will be disabled if no image is captured
-          backgroundColor: _capturedImage != null ? null : Colors.grey,
+        SizedBox(height: 16),
+        ElevatedButton(
+          onPressed: _capturedImage != null ? _handleFaceLogin : null,
+          child: Text('Login with Face'),
+          style: ElevatedButton.styleFrom(
+            minimumSize: Size(double.infinity, 48),
+            backgroundColor: _capturedImage != null ? null : Colors.grey,
+          ),
         ),
-      ),
-    ],
-  );
-}
-
+      ],
+    );
+  }
 
 Future<void> _handleTakePicture() async {
     try {
@@ -323,49 +445,56 @@ Future<void> _handleTakePicture() async {
     }
   }
 
-void _handleLogin() async {
-  if (_formKey.currentState!.validate()) {
-    _formKey.currentState!.save();
+Future<void> _handleLogin() async {
+    if (_formKey.currentState!.validate()) {
+      _formKey.currentState!.save();
 
-    try {
-      // Authenticate the user with Firebase
-      f_User.UserCredential userCredential = await f_User.FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _email,
-        password: _password,
-      );
+      try {
+        // Show loading indicator
+        setState(() => _isProcessing = true);
 
-      String firebaseUID = userCredential.user!.uid;
-
-      // Fetch user details from Firestore using the UID
-      DocumentSnapshot userSnapshot =
-          await FirebaseFirestore.instance.collection('User').doc(firebaseUID).get();
-
-      if (userSnapshot.exists) {
-        // Convert DocumentSnapshot to Map<String, dynamic>
-        Map<String, dynamic> userData = userSnapshot.data() as Map<String, dynamic>;
-        
-        // Use the factory constructor to create User object
-        User user = User.fromJson(userData);
-
-        // Navigate to ProfilePage with the fetched user data
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => HomePage(userID: user.userID, user: user),
-          ),
+        // Authenticate with Firebase
+        f_User.UserCredential userCredential = 
+            await f_User.FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: _email,
+          password: _password,
         );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('User data not found in Firestore.')),
-        );
+
+        String firebaseUID = userCredential.user!.uid;
+
+        // Fetch user details
+        DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+            .collection('User')
+            .doc(firebaseUID)
+            .get();
+
+        if (userSnapshot.exists) {
+          Map<String, dynamic> userData = userSnapshot.data() as Map<String, dynamic>;
+          User user = User.fromJson(userData);
+
+          // Save login state if "Keep me signed in" is checked
+          await _saveLoginState(user.userID);
+
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => HomePage(userID: user.userID, user: user),
+              ),
+            );
+          }
+        } else {
+          _showError('User data not found in Firestore.');
+        }
+      } catch (e) {
+        _showError('Login failed: ${e.toString()}');
+      } finally {
+        if (mounted) {
+          setState(() => _isProcessing = false);
+        }
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login failed: $e')),
-      );
     }
   }
-}
 
  Future<File> _resizeImage(File imageFile) async {
   final originalImage = img.decodeImage(imageFile.readAsBytesSync());
@@ -379,74 +508,208 @@ void _handleLogin() async {
 
 // Future<void> _handleFaceLogin() async {
 //   if (!mounted || _capturedImage == null || _isProcessing) return;
+  
 //   setState(() => _isProcessing = true);
-
+  
 //   try {
-//     _showLoadingDialog();
-    
-//     // Initialize face auth handler
-//     final faceAuthHandler = FaceAuthHandler();
-//     await faceAuthHandler.initialize();
-
-//     // Query users from Firestore
-//     final querySnapshot = await FirebaseFirestore.instance
-//         .collection('User')
-//         .get()
-//         .timeout(Duration(seconds: 10));
-
-//     bool foundMatch = false;
-//     User? matchedUser;
-
-//     for (var doc in querySnapshot.docs) {
-//       final data = doc.data();
-//       final storedEmbedding = data['faceEmbedding'];
-      
-//       if (storedEmbedding != null) {
-//         final isMatch = await faceAuthHandler.verifyFace(
-//           List<double>.from(storedEmbedding),
-//           _capturedImage!
-//         );
-
-//         if (isMatch) {
-//           foundMatch = true;
-//           matchedUser = User(
-//             userID: data['userID'] ?? '',
-//             name: data['name'] ?? '',
-//             email: data['email'] ?? '',
-//             phoneNo: data['phoneNo'] ?? '',
-//             guardianIDs: List<String>.from(data['guardianIDs'] ?? []),
-//             seniorIDs: List<String>.from(data['seniorIDs'] ?? []),
+//     // Show loading indicator
+//     if (mounted) {
+//       showDialog(
+//         context: context,
+//         barrierDismissible: false,
+//         builder: (BuildContext context) {
+//           return WillPopScope(
+//             onWillPop: () async => false,
+//             child: AlertDialog(
+//               content: Row(
+//                 children: [
+//                   CircularProgressIndicator(),
+//                   SizedBox(width: 20),
+//                   Text("Verifying face..."),
+//                 ],
+//               ),
+//             ),
 //           );
-//           break;
+//         },
+//       );
+//     }
+    
+//     // Resize the captured image
+//     final resizedImage = await _resizeImage(_capturedImage!);
+
+//     // Process the resized image for face detection
+//     final inputImage = InputImage.fromFile(resizedImage);
+//     final faces = await _faceDetector.processImage(inputImage);
+
+//     if (faces.isEmpty) {
+//       if (Navigator.canPop(context)) {
+//         Navigator.pop(context);
+//       }
+//       _showError("No face detected. Please try again.");
+//       return;
+//     }
+
+//     final face = faces.first;
+//     final currentLandmarks = _extractFaceLandmarks(face);
+
+//     print('Current Landmarks: $currentLandmarks');
+
+//     if (currentLandmarks == null) {
+//       if (Navigator.canPop(context)) {
+//         Navigator.pop(context);
+//       }
+//       _showError("Could not detect facial features clearly");
+//       return;
+//     }
+
+//     // Query Firestore with proper null safety
+//     QuerySnapshot querySnapshot;
+//     try {
+//       querySnapshot = await FirebaseFirestore.instance
+//           .collection('User')
+//           .get()
+//           .timeout(Duration(seconds: 10));
+//     } on TimeoutException {
+//       if (Navigator.canPop(context)) {
+//         Navigator.pop(context);
+//       }
+//       _showError("Connection timeout. Please check your internet and try again.");
+//       return;
+//     } catch (e) {
+//       if (Navigator.canPop(context)) {
+//         Navigator.pop(context);
+//       }
+//       _showError("Failed to connect to database: ${e.toString()}");
+//       return;
+//     }
+
+//     String? matchedUserId;
+//     double bestMatch = 0;
+    
+//     // Compare with stored face data with proper null checking
+//     for (var doc in querySnapshot.docs) {
+//       if (!mounted) return;
+
+//       // Safely cast document data to a Map<String, dynamic>
+//       final data = doc.data() as Map<String, dynamic>?; // Ensure data is a map
+//       if (data == null) continue; // Skip if data is null
+
+//       // Safely access and cast 'faceData'
+//       final storedFaceData = data['faceData'];
+//       if (storedFaceData != null && storedFaceData is Map<String, dynamic>) {
+//         try {
+//           print('Stored Face Data for ${doc.id}: $storedFaceData');
+//           // Process the face data if it's valid
+//           double similarity = _calculateFaceSimilarity(currentLandmarks, storedFaceData);
+//           print('Similarity for ${doc.id}: $similarity');
+//           if (similarity > 90 && similarity > bestMatch) {
+//             bestMatch = similarity;
+//             matchedUserId = doc.id;
+//           }
+//         } catch (e) {
+//           print('Error processing stored face data for doc ${doc.id}: $e');
+//           continue;
 //         }
+//       } else {
+//         print('Invalid or missing face data for doc ${doc.id}');
 //       }
 //     }
 
-//     if (!foundMatch || matchedUser == null) {
-//       throw Exception("Face not recognized. Please try again or use email login.");
+//     if (!mounted) return;
+
+//     if (matchedUserId == null) {
+//       if (Navigator.canPop(context)) {
+//         Navigator.pop(context);
+//       }
+//       _showError("Face not recognized. Please try again or use manual login.");
+//       return;
 //     }
 
-//     if (mounted) {
-//       Navigator.pushReplacement(
-//         context,
-//         MaterialPageRoute(
-//           builder: (context) => HomePage(userID: matchedUser!.userID, user: matchedUser),
-//         ),
-//       );
+//     // Fetch user data with proper null safety
+//     DocumentSnapshot userDoc;
+//     try {
+//       userDoc = await FirebaseFirestore.instance
+//           .collection('User')
+//           .doc(matchedUserId)
+//           .get()
+//           .timeout(Duration(seconds: 5));
+//     } on TimeoutException {
+//       if (Navigator.canPop(context)) {
+//         Navigator.pop(context);
+//       }
+//       _showError("Failed to fetch user data. Please check your internet and try again.");
+//       return;
+//     } catch (e) {
+//       if (Navigator.canPop(context)) {
+//         Navigator.pop(context);
+//       }
+//       _showError("Error fetching user data: ${e.toString()}");
+//       return;
 //     }
+
+//     if (!mounted) return;
+
+//     if (Navigator.canPop(context)) {
+//       Navigator.pop(context);
+//     }
+
+//     if (!userDoc.exists) {
+//       _showError("User data not found.");
+//       return;
+//     }
+
+//     try {
+//   // Safe access to document data with null checking
+//   final userData = userDoc.data() as Map<String, dynamic>?; // Ensure the data is cast to a map
+//   if (userData == null) {
+//     _showError("Invalid user data format.");
+//     return;
+//   }
+
+//   // Create user object with null safety
+//   User user = User(
+//     userID: userData['userID'] as String? ?? '',
+//     name: userData['name'] as String? ?? '',
+//     email: userData['email'] as String? ?? '',
+//     phoneNo: userData['phoneNo'] as String? ?? '',
+//     faceData: userData['faceData'] != null
+//         ? Map<String, dynamic>.from(userData['faceData'])
+//         : null, // Ensure faceData is properly cast to a Map
+//     guardianIDs: userData['guardianIDs'] != null
+//         ? List<String>.from(userData['guardianIDs'])
+//         : [], // Handle null for guardianIDs
+//     seniorIDs: userData['seniorIDs'] != null
+//         ? List<String>.from(userData['seniorIDs'])
+//         : [], // Handle null for seniorIDs
+//   );
+  
+
+//   if (mounted) {
+//     Navigator.pushReplacement(
+//       context,
+//       MaterialPageRoute(
+//         builder: (context) => HomePage(userID: user.userID, user: user),
+//       ),
+//     );
+//   }
+// } catch (e) {
+//   _showError("Error processing user data: ${e.toString()}");
+// }
+
 
 //   } catch (e) {
 //     if (mounted) {
+//       if (Navigator.canPop(context)) {
+//         Navigator.pop(context);
+//       }
 //       _showError(e.toString());
 //     }
 //   } finally {
 //     if (mounted) {
-//       _dismissLoadingDialog();
 //       setState(() => _isProcessing = false);
 //     }
 //   }
 // }
-
 
 Future<void> _handleFaceLogin() async {
   if (!mounted || _capturedImage == null || _isProcessing) return;
@@ -454,7 +717,6 @@ Future<void> _handleFaceLogin() async {
   setState(() => _isProcessing = true);
   
   try {
-    // Show loading indicator
     if (mounted) {
       showDialog(
         context: context,
@@ -476,10 +738,7 @@ Future<void> _handleFaceLogin() async {
       );
     }
     
-    // Resize the captured image
     final resizedImage = await _resizeImage(_capturedImage!);
-
-    // Process the resized image for face detection
     final inputImage = InputImage.fromFile(resizedImage);
     final faces = await _faceDetector.processImage(inputImage);
 
@@ -494,8 +753,6 @@ Future<void> _handleFaceLogin() async {
     final face = faces.first;
     final currentLandmarks = _extractFaceLandmarks(face);
 
-    print('Current Landmarks: $currentLandmarks');
-
     if (currentLandmarks == null) {
       if (Navigator.canPop(context)) {
         Navigator.pop(context);
@@ -504,7 +761,6 @@ Future<void> _handleFaceLogin() async {
       return;
     }
 
-    // Query Firestore with proper null safety
     QuerySnapshot querySnapshot;
     try {
       querySnapshot = await FirebaseFirestore.instance
@@ -517,34 +773,22 @@ Future<void> _handleFaceLogin() async {
       }
       _showError("Connection timeout. Please check your internet and try again.");
       return;
-    } catch (e) {
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
-      _showError("Failed to connect to database: ${e.toString()}");
-      return;
     }
 
     String? matchedUserId;
     double bestMatch = 0;
     
-    // Compare with stored face data with proper null checking
     for (var doc in querySnapshot.docs) {
       if (!mounted) return;
 
-      // Safely cast document data to a Map<String, dynamic>
-      final data = doc.data() as Map<String, dynamic>?; // Ensure data is a map
-      if (data == null) continue; // Skip if data is null
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null) continue;
 
-      // Safely access and cast 'faceData'
       final storedFaceData = data['faceData'];
       if (storedFaceData != null && storedFaceData is Map<String, dynamic>) {
         try {
-          print('Stored Face Data for ${doc.id}: $storedFaceData');
-          // Process the face data if it's valid
           double similarity = _calculateFaceSimilarity(currentLandmarks, storedFaceData);
-          print('Similarity for ${doc.id}: $similarity');
-          if (similarity > 85 && similarity > bestMatch) {
+          if (similarity > 90 && similarity > bestMatch) {
             bestMatch = similarity;
             matchedUserId = doc.id;
           }
@@ -552,8 +796,6 @@ Future<void> _handleFaceLogin() async {
           print('Error processing stored face data for doc ${doc.id}: $e');
           continue;
         }
-      } else {
-        print('Invalid or missing face data for doc ${doc.id}');
       }
     }
 
@@ -567,7 +809,6 @@ Future<void> _handleFaceLogin() async {
       return;
     }
 
-    // Fetch user data with proper null safety
     DocumentSnapshot userDoc;
     try {
       userDoc = await FirebaseFirestore.instance
@@ -575,12 +816,6 @@ Future<void> _handleFaceLogin() async {
           .doc(matchedUserId)
           .get()
           .timeout(Duration(seconds: 5));
-    } on TimeoutException {
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
-      _showError("Failed to fetch user data. Please check your internet and try again.");
-      return;
     } catch (e) {
       if (Navigator.canPop(context)) {
         Navigator.pop(context);
@@ -601,42 +836,46 @@ Future<void> _handleFaceLogin() async {
     }
 
     try {
-  // Safe access to document data with null checking
-  final userData = userDoc.data() as Map<String, dynamic>?; // Ensure the data is cast to a map
-  if (userData == null) {
-    _showError("Invalid user data format.");
-    return;
-  }
+      final userData = userDoc.data() as Map<String, dynamic>?;
+      if (userData == null) {
+        _showError("Invalid user data format.");
+        return;
+      }
 
-  // Create user object with null safety
-  User user = User(
-    userID: userData['userID'] as String? ?? '',
-    name: userData['name'] as String? ?? '',
-    email: userData['email'] as String? ?? '',
-    phoneNo: userData['phoneNo'] as String? ?? '',
-    faceData: userData['faceData'] != null
-        ? Map<String, dynamic>.from(userData['faceData'])
-        : null, // Ensure faceData is properly cast to a Map
-    guardianIDs: userData['guardianIDs'] != null
-        ? List<String>.from(userData['guardianIDs'])
-        : [], // Handle null for guardianIDs
-    seniorIDs: userData['seniorIDs'] != null
-        ? List<String>.from(userData['seniorIDs'])
-        : [], // Handle null for seniorIDs
-  );
+      User user = User(
+        userID: userData['userID'] as String? ?? '',
+        name: userData['name'] as String? ?? '',
+        email: userData['email'] as String? ?? '',
+        phoneNo: userData['phoneNo'] as String? ?? '',
+        faceData: userData['faceData'] != null
+            ? Map<String, dynamic>.from(userData['faceData'])
+            : null,
+        guardianIDs: userData['guardianIDs'] != null
+            ? List<String>.from(userData['guardianIDs'])
+            : [],
+        seniorIDs: userData['seniorIDs'] != null
+            ? List<String>.from(userData['seniorIDs'])
+            : [],
+      );
 
-  if (mounted) {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => HomePage(userID: user.userID, user: user),
-      ),
-    );
-  }
-} catch (e) {
-  _showError("Error processing user data: ${e.toString()}");
-}
+      // Save face login state if "Keep me signed in" is checked
+      if (_keepSignedIn) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('faceLoginUserID', user.userID);
+        await prefs.setBool('keepSignedInFace', true);
+      }
 
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => HomePage(userID: user.userID, user: user),
+          ),
+        );
+      }
+    } catch (e) {
+      _showError("Error processing user data: ${e.toString()}");
+    }
 
   } catch (e) {
     if (mounted) {

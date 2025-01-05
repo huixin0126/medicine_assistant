@@ -9,6 +9,7 @@ class User {
   final List<String> guardianIDs;
   final List<String> seniorIDs;
   final String? avatar; 
+  final String? faceImageUrl;
 
   User({
     required this.userID,
@@ -21,6 +22,7 @@ class User {
     this.guardianIDs = const [],
     this.seniorIDs = const [],
     this.avatar, 
+    this.faceImageUrl,
   });
 
   Map<String, dynamic> toJson() => {

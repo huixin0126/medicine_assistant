@@ -542,6 +542,7 @@ Stream<List<QueryDocumentSnapshot>> _getUpcomingReminders() {
   return FirebaseFirestore.instance
       .collection('Reminder')
       .where('userID', isEqualTo: widget.userID)
+      .where('status', isEqualTo: 'Active')
       .snapshots()
       .map((snapshot) {
         List<QueryDocumentSnapshot> upcomingReminders = snapshot.docs.where((doc) {
@@ -639,7 +640,7 @@ Stream<List<QueryDocumentSnapshot>> _getUpcomingReminders() {
                     ),
                     label: const Text(
                       'Panic Button',
-                      style: TextStyle(color: Colors.white), // Set the text color to white
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold), // Set the text color to white
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red,

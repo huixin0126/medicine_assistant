@@ -39,6 +39,7 @@ class _RegisterPageState extends State<RegisterPage> {
   String _name = '';
   String _email = '';
   String _password = '';
+  String _confirmPassword = '';
   String _phoneNo = '';
 
   final FaceDetector _faceDetector = FaceDetector(
@@ -172,100 +173,169 @@ Future<void> _openCamera() async {
 }
 
 Future<void> _handleRegister() async {
-  if (_formKey.currentState!.validate()) {
-    if (_capturedImage == null || _detectedFaces == null || _detectedFaces!.isEmpty) {
+  if (!_formKey.currentState!.validate()) return;
+
+  if (_capturedImage == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Please capture your face image first.')),
+    );
+    return;
+  }
+
+  // Show loading indicator at the start of registration
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (BuildContext context) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    },
+  );
+
+  _formKey.currentState!.save();
+
+  try {
+    // Process face detection if not already done
+    if (_detectedFaces == null) {
+      try {
+        final inputImage = InputImage.fromFile(_capturedImage!);
+        _detectedFaces = await _faceDetector.processImage(inputImage);
+      } catch (e) {
+        // Close loading dialog
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to process face image. Please try capturing again.')),
+        );
+        return;
+      }
+    }
+
+    // Verify face detection results
+    if (_detectedFaces == null || _detectedFaces!.isEmpty) {
+      // Close loading dialog
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Please capture your face first.')),
+        const SnackBar(content: Text('No face detected. Please capture your face clearly.')),
       );
       return;
     }
 
-    _formKey.currentState!.save();
+    // Create user account
+    final userCredential = await f_User.FirebaseAuth.instance
+        .createUserWithEmailAndPassword(email: _email, password: _password);
 
-    try {
-      f_User.UserCredential userCredential = await f_User.FirebaseAuth.instance
-          .createUserWithEmailAndPassword(email: _email, password: _password);
+    String deviceToken = await FirebaseMessaging.instance.getToken() ?? '';
 
-      String deviceToken = await FirebaseMessaging.instance.getToken() ?? '';
+    // Upload face image
+    final storageReference = FirebaseStorage.instance
+        .ref()
+        .child('face_images/${userCredential.user!.uid}.jpg');
+    
+    // Resize image before upload to reduce storage usage
+    final resizedImage = await compute(resizeImageIsolate, _capturedImage!);
+    final uploadTask = storageReference.putFile(resizedImage);
+    final snapshot = await uploadTask.whenComplete(() {});
+    final imageUrl = await snapshot.ref.getDownloadURL();
 
-      final storageReference = FirebaseStorage.instance
-          .ref()
-          .child('face_images/${userCredential.user!.uid}.jpg');
-      final uploadTask = storageReference.putFile(_capturedImage!);
+    // Prepare face data with null safety
+    final faceData = _detectedFaces!.first;
+    final landmarks = {
+      'leftEye': [
+        faceData.landmarks[FaceLandmarkType.leftEye]?.position.x ?? 0.0,
+        faceData.landmarks[FaceLandmarkType.leftEye]?.position.y ?? 0.0,
+      ],
+      'rightEye': [
+        faceData.landmarks[FaceLandmarkType.rightEye]?.position.x ?? 0.0,
+        faceData.landmarks[FaceLandmarkType.rightEye]?.position.y ?? 0.0,
+      ],
+      'nose': [
+        faceData.landmarks[FaceLandmarkType.noseBase]?.position.x ?? 0.0,
+        faceData.landmarks[FaceLandmarkType.noseBase]?.position.y ?? 0.0,
+      ],
+      'leftMouth': [
+        faceData.landmarks[FaceLandmarkType.leftMouth]?.position.x ?? 0.0,
+        faceData.landmarks[FaceLandmarkType.leftMouth]?.position.y ?? 0.0,
+      ],
+      'rightMouth': [
+        faceData.landmarks[FaceLandmarkType.rightMouth]?.position.x ?? 0.0,
+        faceData.landmarks[FaceLandmarkType.rightMouth]?.position.y ?? 0.0,
+      ],
+    };
 
-      // Await for upload completion
-      final snapshot = await uploadTask.whenComplete(() {});
+    // Verify landmarks data
+    bool hasValidLandmarks = landmarks.values.every((point) => 
+      point[0] != 0.0 || point[1] != 0.0
+    );
 
-      // Get the download URL
-      final imageUrl = await snapshot.ref.getDownloadURL();
+    if (!hasValidLandmarks) {
+      // Delete the created user if face data is invalid
+      await userCredential.user?.delete();
+      throw Exception('Invalid face landmarks detected. Please try capturing again.');
+    }
 
-      // Prepare face data for Firestore
-      final faceData = _detectedFaces!.first;
-      final landmarks = {
-        'leftEye': [
-          faceData.landmarks[FaceLandmarkType.leftEye]?.position.x ?? 0.0,
-          faceData.landmarks[FaceLandmarkType.leftEye]?.position.y ?? 0.0,
-        ],
-        'rightEye': [
-          faceData.landmarks[FaceLandmarkType.rightEye]?.position.x ?? 0.0,
-          faceData.landmarks[FaceLandmarkType.rightEye]?.position.y ?? 0.0,
-        ],
-        'nose': [
-          faceData.landmarks[FaceLandmarkType.noseBase]?.position.x ?? 0.0,
-          faceData.landmarks[FaceLandmarkType.noseBase]?.position.y ?? 0.0,
-        ],
-        'leftMouth': [
-          faceData.landmarks[FaceLandmarkType.leftMouth]?.position.x ?? 0.0,
-          faceData.landmarks[FaceLandmarkType.leftMouth]?.position.y ?? 0.0,
-        ],
-        'rightMouth': [
-          faceData.landmarks[FaceLandmarkType.rightMouth]?.position.x ?? 0.0,
-          faceData.landmarks[FaceLandmarkType.rightMouth]?.position.y ?? 0.0,
-        ],
-      };
+    // Save user data to Firestore
+    await FirebaseFirestore.instance
+        .collection('User')
+        .doc(userCredential.user!.uid)
+        .set({
+      'avatar': '',
+      'deviceToken': deviceToken,
+      'email': _email,
+      'faceData': landmarks,
+      'faceImageUrl': imageUrl,
+      'name': _name,
+      'phoneNo': _phoneNo,
+      'userID': userCredential.user!.uid,
+      'emergencyContact': '',
+      'seniorIDs': [],
+      'guardianIDs': [],
+    });
 
-      // Save data to Firestore
-      await FirebaseFirestore.instance
-          .collection('User')
-          .doc(userCredential.user!.uid)
-          .set({
-        'avatar': '',
-        'deviceToken': deviceToken,
-        'email': _email,
-        'faceData': landmarks,
-        'faceImageUrl': imageUrl,
-        'name': _name,
-        'phoneNo': _phoneNo,
-        'userID': userCredential.user!.uid,
-        'emergencyContact': '',
-        'seniorIDs': [],
-        'guardianIDs': [],
-      });
-
-      // Remove loading indicator
+    // Close loading dialog
+    if (mounted && Navigator.canPop(context)) {
       Navigator.pop(context);
+    }
 
-      // Show success message before navigation
+    // Show success message
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Registration successful! Please login.')),
+        const SnackBar(content: Text('Registration successful! Please login.')),
       );
+    }
 
-      // Wait for snackbar to be visible before navigation
-      await Future.delayed(Duration(seconds: 1));
+    // Wait for snackbar to be visible
+    await Future.delayed(const Duration(seconds: 1));
 
-      // Navigate to login page
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => LoginPage(),
-          ),
-        );
-      }
-    } catch (e) {
-      print('Registration failed: $e');
+    // Navigate to login page
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LoginPage(),
+        ),
+      );
+    }
+  } catch (e) {
+    // Close loading dialog
+    if (mounted && Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+
+    print('Registration failed: $e');
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Registration failed: $e')),
+        SnackBar(
+          content: Text(
+            'Registration failed: ${e.toString().contains('Exception:') 
+              ? e.toString().split('Exception: ')[1] 
+              : 'Please try again.'}'
+          ),
+        ),
       );
     }
   }
@@ -375,22 +445,71 @@ Future<void> _handleRegister() async {
             children: [
               TextFormField(
                 decoration: InputDecoration(labelText: 'Name', border: OutlineInputBorder()),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter your name';
+                  }
+                  return null;
+                },
                 onSaved: (value) => _name = value!,
               ),
               SizedBox(height: 16),
               TextFormField(
                 decoration: InputDecoration(labelText: 'Email', border: OutlineInputBorder()),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter your email';
+                  }
+                  if (!value.contains('@')) {
+                    return 'Please enter a valid email';
+                  }
+                  return null;
+                },
                 onSaved: (value) => _email = value!,
               ),
               SizedBox(height: 16),
               TextFormField(
                 decoration: InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
-                onSaved: (value) => _password = value!,
                 obscureText: true,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter your password';
+                  }
+                  if (value.length < 6) {
+                    return 'Password must be at least 6 characters';
+                  }
+                  return null;
+                },
+                onSaved: (value) => _password = value!,
+                onChanged: (value) => _password = value,
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                decoration: InputDecoration(
+                  labelText: 'Confirm Password', 
+                  border: OutlineInputBorder()
+                ),
+                obscureText: true,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please confirm your password';
+                  }
+                  if (value != _password) {
+                    return 'Passwords do not match';
+                  }
+                  return null;
+                },
+                onSaved: (value) => _confirmPassword = value!,
               ),
               SizedBox(height: 16),
               TextFormField(
                 decoration: InputDecoration(labelText: 'Phone Number', border: OutlineInputBorder()),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter your phone number';
+                  }
+                  return null;
+                },
                 onSaved: (value) => _phoneNo = value!,
               ),
               SizedBox(height: 24),
