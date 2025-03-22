@@ -152,7 +152,7 @@ class _MyAppState extends State<MyApp> {
       scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'Medicine Assistant',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.lightBlue.shade900),
         useMaterial3: true,
       ),
       home: _isLoading
@@ -220,7 +220,7 @@ Future<void> main() async {
           channelKey: 'medicine_reminder',
           channelName: 'Medicine Reminders',
           channelDescription: 'Reminder for scheduled medication',
-          defaultColor: const Color(0xFF9D50DD),
+          defaultColor: const Color(0xFF0277BD),
           ledColor: Colors.white,
           importance: NotificationImportance.Max,
           channelShowBadge: true,

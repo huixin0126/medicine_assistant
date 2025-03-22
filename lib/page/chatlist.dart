@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:medicine_assistant_app/page/chat.dart';
 import 'package:medicine_assistant_app/page/chatbotapi.dart';
 import 'package:medicine_assistant_app/service/chat_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ChatListPage extends StatefulWidget {
   final String userID;
@@ -389,13 +390,144 @@ Future<String> _getChatID(String receiverID, String userID) async {
 //   }
 // }
 
+Future<void> _makePhoneCall(String phoneNumber) async {
+    final Uri callUri = Uri(scheme: 'tel', path: phoneNumber);
+    try {
+      await launchUrl(callUri);
+    } catch (e) {
+      print('Could not launch phone call: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not make phone call')),
+      );
+    }
+  }
+
+  Future<void> _handleCallPress(String receiverID) async {
+    final userDoc = await _firestore.collection('User').doc(receiverID).get();
+    if (userDoc.exists) {
+      final phoneNo = userDoc.get('phoneNo') as String?;
+      if (phoneNo != null && phoneNo.isNotEmpty) {
+        _makePhoneCall(phoneNo);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No phone number available')),
+        );
+      }
+    }
+  }
+
+// @override
+//   Widget build(BuildContext context) {
+//     final String userId = widget.userID; // Replace with the current logged-in user's ID
+
+//     return Scaffold(
+//       appBar: AppBar(
+//         title: const Text('Chats'),
+//       ),
+//       body: FutureBuilder<List<Map<String, dynamic>>>(
+//         future: _chatsFuture,
+//         builder: (context, snapshot) {
+//           if (snapshot.connectionState == ConnectionState.waiting) {
+//             return const Center(child: CircularProgressIndicator());
+//           } else if (snapshot.hasError) {
+//             return const Center(child: Text('Error fetching chats.'));
+//           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+//             return const Center(child: Text('No chats available.'));
+//           } else {
+//             final chats = snapshot.data!;
+//             return RefreshIndicator(
+//               onRefresh: _refreshChats,
+//               child: ListView.builder(
+//                 itemCount: chats.length,
+//                 itemBuilder: (context, index) {
+//                   final chat = chats[index];
+//                   final String receiverID = chat['userID'] != userId ? chat['userID'] : 'Unknown';
+
+//                   return FutureBuilder<String>(
+//                     future: _getMostRecentMessage(chat['chatID'] ?? ''),
+//                     builder: (context, messageSnapshot) {
+//                       if (messageSnapshot.connectionState == ConnectionState.waiting) {
+//                         return const ListTile(title: Text('Loading...'));
+//                       } else if (messageSnapshot.hasError) {
+//                         return ListTile(title: Text('Error loading message'));
+//                       } else {
+//                         String message = messageSnapshot.data ?? 'No message';
+//                         return ListTile(
+//                           leading: CircleAvatar(
+//                             backgroundImage: NetworkImage(chat['userAvatar']),
+//                           ),
+//                           title: Text(chat['userName']),
+//                           subtitle: Text(message),
+//                           onTap: () async {
+//                             String chatID = chat['chatID'] ?? '';
+//                             if (receiverID == 'chatbot') {
+//                               String chatbotID = await _generateChatbotID();
+//                               await Navigator.push(
+//                                 context,
+//                                 MaterialPageRoute(
+//                                   builder: (context) => ChatbotapiPage(
+//                                     chatID: chatbotID,
+//                                     userID: userId,
+//                                   ),
+//                                 ),
+//                               );
+//                             } else {
+//                               await Navigator.push(
+//                                 context,
+//                                 MaterialPageRoute(
+//                                   builder: (context) => ChatPage(
+//                                     chatID: chatID,
+//                                     userID: userId,
+//                                     receiverID: receiverID,
+//                                   ),
+//                                 ),
+//                               );
+//                             }
+//                             // Trigger a refresh after returning from the chat page
+//                             _refreshChats();
+//                           },
+//                         );
+//                       }
+//                     },
+//                   );
+//                 },
+//               ),
+//             );
+//           }
+//         },
+//       ),
+//       floatingActionButton: FloatingActionButton(
+//         onPressed: () async {
+//           String chatbotID = await _generateChatbotID();
+//           Navigator.push(
+//             context,
+//             MaterialPageRoute(
+//               builder: (context) => ChatbotapiPage(
+//                 chatID: chatbotID,
+//                 userID: userId,
+//               ),
+//             ),
+//           );
+//         },
+//         child: const Icon(Icons.chat),
+//       ),
+//     );
+//   }
+// }
+
 @override
   Widget build(BuildContext context) {
-    final String userId = widget.userID; // Replace with the current logged-in user's ID
+    final String userId = widget.userID;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chats'),
+        title: const Text(
+                  'Chats',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  ),
       ),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _chatsFuture,
@@ -425,15 +557,16 @@ Future<String> _getChatID(String receiverID, String userID) async {
                         return ListTile(title: Text('Error loading message'));
                       } else {
                         String message = messageSnapshot.data ?? 'No message';
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundImage: NetworkImage(chat['userAvatar']),
-                          ),
-                          title: Text(chat['userName']),
-                          subtitle: Text(message),
-                          onTap: () async {
-                            String chatID = chat['chatID'] ?? '';
-                            if (receiverID == 'chatbot') {
+                        
+                        // Don't show call button for chatbot
+                        if (receiverID == 'chatbot') {
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundImage: NetworkImage(chat['userAvatar']),
+                            ),
+                            title: Text(chat['userName']),
+                            subtitle: Text(message),
+                            onTap: () async {
                               String chatbotID = await _generateChatbotID();
                               await Navigator.push(
                                 context,
@@ -444,7 +577,40 @@ Future<String> _getChatID(String receiverID, String userID) async {
                                   ),
                                 ),
                               );
-                            } else {
+                              _refreshChats();
+                            },
+                          );
+                        }
+
+                        // For regular users, include call button and keep swipe functionality
+                        return Dismissible(
+                          key: Key(chat['userID']),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20.0),
+                            color: Colors.green,
+                            child: const Icon(
+                              Icons.phone,
+                              color: Colors.white,
+                            ),
+                          ),
+                          confirmDismiss: (direction) async {
+                            await _handleCallPress(receiverID);
+                            return false; // Don't dismiss the item
+                          },
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundImage: NetworkImage(chat['userAvatar']),
+                            ),
+                            title: Text(chat['userName']),
+                            subtitle: Text(message),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.phone),
+                              onPressed: () => _handleCallPress(receiverID),
+                            ),
+                            onTap: () async {
+                              String chatID = chat['chatID'] ?? '';
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -455,10 +621,9 @@ Future<String> _getChatID(String receiverID, String userID) async {
                                   ),
                                 ),
                               );
-                            }
-                            // Trigger a refresh after returning from the chat page
-                            _refreshChats();
-                          },
+                              _refreshChats();
+                            },
+                          ),
                         );
                       }
                     },

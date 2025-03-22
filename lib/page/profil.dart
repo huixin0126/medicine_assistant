@@ -9,6 +9,7 @@ import 'package:medicine_assistant_app/class/user.dart';
 import 'package:medicine_assistant_app/page/login.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart' as f_User;
 
 class ProfilePage extends StatefulWidget {
   final String userID;
@@ -41,6 +42,13 @@ class _ProfilePageState extends State<ProfilePage> {
   List<User> _connectedGuardians = [];
   List<User> _connectedSeniors = [];
 
+  // Add these controllers at the top of _ProfilePageState
+  late TextEditingController _oldPasswordController;
+  late TextEditingController _newPasswordController;
+
+  User? _priorityGuardian;
+  List<User> _otherGuardians = [];
+
   @override
   void initState() {
     super.initState();
@@ -53,7 +61,56 @@ class _ProfilePageState extends State<ProfilePage> {
     _emailController = TextEditingController();
     _phoneController = TextEditingController();
     _emergencyContactController = TextEditingController();
-    _passwordController = TextEditingController();
+
+    _oldPasswordController = TextEditingController();
+    _newPasswordController = TextEditingController();
+  }
+
+  // Add phone formatting helpers
+  String formatPhoneNumberForDisplay(String phone) {
+    // Remove any non-digit characters and '60' prefix if present
+    String digits = phone.replaceAll(RegExp(r'[^\d]'), '');
+    if (digits.startsWith('60')) {
+      digits = digits.substring(2);
+    }
+    if (digits.startsWith('0')) {
+      digits = digits.substring(1);
+    }
+    
+    // Format the phone number with dashes
+    String formatted = digits;
+    if (digits.length == 10) {
+    // Format for numbers like 11 1229 3796
+    formatted = '${digits.substring(0, 2)} ${digits.substring(2, 6)} ${digits.substring(6)}';
+    } else if (digits.length == 9) {
+      // Format for numbers like 16 294 2336
+      formatted = '${digits.substring(0, 2)} ${digits.substring(2, 5)} ${digits.substring(5)}';
+    } else if (digits.length > 6) {
+      // Generic format for numbers with more than 6 digits
+      formatted = '${digits.substring(0, 3)}-${digits.substring(3, 6)}-${digits.substring(6)}';
+    } else if (digits.length > 3) {
+      // Generic format for numbers with 4 to 6 digits
+      formatted = '${digits.substring(0, 3)}-${digits.substring(3)}';
+    }
+    
+    return formatted;
+  }
+
+  String formatPhoneNumberForStorage(String phone) {
+    // Remove any non-digit characters
+    String digits = phone.replaceAll(RegExp(r'[^\d]'), '');
+    
+    // Remove leading 0 if present
+    if (digits.startsWith('0')) {
+      digits = digits.substring(1);
+    }
+    
+    // Add '60' prefix if not present
+    if (!digits.startsWith('60')) {
+      digits = '60$digits';
+    }
+    
+    return digits;
   }
 
   Future<void> _loadUserData() async {
@@ -67,8 +124,8 @@ class _ProfilePageState extends State<ProfilePage> {
           // Update controllers with the latest data
           _nameController.text = _currentUser?.name ?? '';
           _emailController.text = _currentUser?.email ?? '';
-          _phoneController.text = _currentUser?.phoneNo ?? '';
-          _emergencyContactController.text = _currentUser?.emergencyContact ?? '';
+          _phoneController.text = formatPhoneNumberForDisplay(_currentUser?.phoneNo ?? '');
+          _emergencyContactController.text = formatPhoneNumberForDisplay(_currentUser?.emergencyContact ?? '');
         });
 
         _loadConnectedUsers();
@@ -78,46 +135,165 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  // Future<void> _loadConnectedUsers() async {
+  //   if (_currentUser == null) return;
+
+  //   try {
+  //     // Load Guardians
+  //     List<User> guardians = [];
+  //     for (String guardianPath in _currentUser!.guardianIDs) {
+  //       String guardianId = guardianPath.split('/').last;
+  //       final guardianDoc = await _firestore.collection('User').doc(guardianId).get();
+  //       if (guardianDoc.exists) {
+  //         guardians.add(User.fromJson(guardianDoc.data() as Map<String, dynamic>));
+  //       }
+  //     }
+
+  //     // Load Seniors
+  //     List<User> seniors = [];
+  //     for (String seniorPath in _currentUser!.seniorIDs) {
+  //       String seniorId = seniorPath.split('/').last;
+  //       final seniorDoc = await _firestore.collection('User').doc(seniorId).get();
+  //       if (seniorDoc.exists) {
+  //         seniors.add(User.fromJson(seniorDoc.data() as Map<String, dynamic>));
+  //       }
+  //     }
+
+  //     setState(() {
+  //       _connectedGuardians = guardians;
+  //       _connectedSeniors = seniors;
+  //     });
+  //   } catch (e) {
+  //     print('Error loading connected users: $e');
+  //   }
+  // }
+
   Future<void> _loadConnectedUsers() async {
-    if (_currentUser == null) return;
+  if (_currentUser == null) return;
 
-    try {
-      // Load Guardians
-      List<User> guardians = [];
-      for (String guardianPath in _currentUser!.guardianIDs) {
-        String guardianId = guardianPath.split('/').last;
-        final guardianDoc = await _firestore.collection('User').doc(guardianId).get();
-        if (guardianDoc.exists) {
-          guardians.add(User.fromJson(guardianDoc.data() as Map<String, dynamic>));
+  try {
+    // Get the priorityGuardian path from the current user's document
+    final userDoc = await _firestore.collection('User').doc(widget.userID).get();
+    final userData = userDoc.data() as Map<String, dynamic>;
+    final String? priorityGuardianPath = userData['priorityGuardian'] as String?;
+
+    // Load Guardians
+    List<User> guardians = [];
+    User? priorityGuardian;
+    
+    for (String guardianPath in _currentUser!.guardianIDs) {
+      String guardianId = guardianPath.split('/').last;
+      final guardianDoc = await _firestore.collection('User').doc(guardianId).get();
+      
+      if (guardianDoc.exists) {
+        User guardian = User.fromJson(guardianDoc.data() as Map<String, dynamic>);
+        guardians.add(guardian);
+        
+        // Check if this guardian is the priority guardian
+        if (priorityGuardianPath != null && guardianPath == priorityGuardianPath) {
+          priorityGuardian = guardian;
         }
       }
-
-      // Load Seniors
-      List<User> seniors = [];
-      for (String seniorPath in _currentUser!.seniorIDs) {
-        String seniorId = seniorPath.split('/').last;
-        final seniorDoc = await _firestore.collection('User').doc(seniorId).get();
-        if (seniorDoc.exists) {
-          seniors.add(User.fromJson(seniorDoc.data() as Map<String, dynamic>));
-        }
-      }
-
-      setState(() {
-        _connectedGuardians = guardians;
-        _connectedSeniors = seniors;
-      });
-    } catch (e) {
-      print('Error loading connected users: $e');
     }
+
+    // Separate other guardians (excluding priority guardian)
+    List<User> others = guardians
+        .where((g) => g.userID != priorityGuardian?.userID)
+        .toList();
+
+    // Load Seniors
+    List<User> seniors = [];
+    for (String seniorPath in _currentUser!.seniorIDs) {
+      String seniorId = seniorPath.split('/').last;
+      final seniorDoc = await _firestore.collection('User').doc(seniorId).get();
+      if (seniorDoc.exists) {
+        seniors.add(User.fromJson(seniorDoc.data() as Map<String, dynamic>));
+      }
+    }
+
+    setState(() {
+      _priorityGuardian = priorityGuardian;
+      _otherGuardians = others;
+      _connectedGuardians = guardians;
+      _connectedSeniors = seniors;
+    });
+  } catch (e) {
+    print('Error loading connected users: $e');
   }
+}
+
+  Future _dropPriorityGuardian() async {
+  try {
+    if (_priorityGuardian == null) return;
+
+    // Remove priority guardian from Firestore
+    await _firestore.collection('User').doc(widget.userID).update({
+      'priorityGuardian': FieldValue.delete(), // Remove the priorityGuardian field
+    });
+
+    setState(() {
+      if (_priorityGuardian != null) {
+        _otherGuardians.add(_priorityGuardian!);
+        _otherGuardians.sort((a, b) => a.name.compareTo(b.name)); // Optional: sort by name
+        _priorityGuardian = null;
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Priority guardian removed successfully')),
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error removing priority guardian: $e')),
+    );
+  }
+}
+
+Future _setPriorityGuardian(User guardian) async {
+  try {
+    // Check if the user is a senior
+    if (_connectedSeniors.any((senior) => senior.userID == guardian.userID)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Connected seniors cannot be set as priority guardians')),
+      );
+      return;
+    }
+
+    // Update the priorityGuardian field in Firestore
+    await _firestore.collection('User').doc(widget.userID).update({
+      'priorityGuardian': '/User/${guardian.userID}', // Set the priority guardian
+    });
+
+    setState(() {
+      _priorityGuardian = guardian;
+      _otherGuardians = _connectedGuardians
+          .where((g) => g.userID != guardian.userID)
+          .toList();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Priority guardian updated successfully')),
+    );
+
+    await _loadConnectedUsers();
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error updating priority guardian: $e')),
+    );
+  }
+}
+
 
 Future<void> _updateProfile() async {
     try {
+          // Format phone numbers for storage
+      final String formattedPhone = formatPhoneNumberForStorage(_phoneController.text);
+      final String formattedEmergency = formatPhoneNumberForStorage(_emergencyContactController.text);
       await _firestore.collection('User').doc(widget.userID).update({
         'name': _nameController.text,
         'email': _emailController.text,
-        'phoneNo': _phoneController.text,
-        'emergencyContact': _emergencyContactController.text,
+        'phoneNo': formattedPhone,
+        'emergencyContact': formattedEmergency,
         'avatar': _currentAvatarUrl,
       });
 
@@ -167,7 +343,13 @@ Future<void> _updateProfile() async {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Profile'),
+                title: const Text(
+                  'Profile',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  ),
         actions: [
           IconButton(
             icon: Icon(_isEditing ? Icons.save : Icons.edit),
@@ -299,25 +481,226 @@ Future<void> _updateProfile() async {
     );
   }
 
-  Widget _buildProfileForm() {
-    return Padding(
-      padding: EdgeInsets.all(16),
-      child: Column(
-        children: [
-          _buildTextField(_nameController, 'Name', Icons.person),
-          _buildTextField(_emailController, 'Email', Icons.email),
-          _buildTextField(_phoneController, 'Phone', Icons.phone),
-          _buildTextField(_emergencyContactController, 'Emergency Contact',
-              Icons.emergency),
-          if (_isEditing)
-            _buildTextField(_passwordController, 'New Password',
-                Icons.lock, isPassword: true),
-        ],
-      ),
+  // Add password validation method
+String? validatePassword(String? value) {
+  if (value == null || value.isEmpty) {
+    return 'Please enter your password';
+  }
+  if (value.length < 8) {
+    return 'Password must be at least 8 characters long';
+  }
+  if (!value.contains(RegExp(r'[A-Z]'))) {
+    return 'Password must contain at least 1 uppercase letter';
+  }
+  if (!value.contains(RegExp(r'[a-z]'))) {
+    return 'Password must contain at least 1 lowercase letter';
+  }
+  if (!value.contains(RegExp(r'[0-9]'))) {
+    return 'Password must contain at least 1 number';
+  }
+  if (!value.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))) {
+    return 'Password must contain at least 1 special character';
+  }
+  return null;
+}
+
+// Add password change method
+Future<void> _changePassword() async {
+  // Validate new password
+  String? validationError = validatePassword(_newPasswordController.text);
+  if (validationError != null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(validationError), backgroundColor: Colors.red),
     );
+    return;
   }
 
-  Widget _buildConnectedUsersSection() {
+  try {
+    // Get current user
+    f_User.User? currentUser = f_User.FirebaseAuth.instance.currentUser;
+    
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No user currently signed in'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Get user email from Firestore since we need it for reauthentication
+    DocumentSnapshot userDoc = await _firestore.collection('User').doc(widget.userID).get();
+    String userEmail = (userDoc.data() as Map<String, dynamic>)['email'] as String;
+
+    // Create credentials for reauthentication
+    f_User.AuthCredential credential = f_User.EmailAuthProvider.credential(
+      email: userEmail,
+      password: _oldPasswordController.text,
+    );
+
+    try {
+      // Reauthenticate user
+      await currentUser.reauthenticateWithCredential(credential);
+      
+      // If reauthentication successful, update password
+      await currentUser.updatePassword(_newPasswordController.text);
+
+      // Clear controllers
+      _oldPasswordController.clear();
+      _newPasswordController.clear();
+
+      // Close the dialog only if the widget is still mounted
+      if (mounted) {
+        Navigator.pop(context);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Password changed successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } on f_User.FirebaseAuthException catch (e) {
+      String errorMessage = 'An error occurred';
+      
+      switch (e.code) {
+        case 'wrong-password':
+          errorMessage = 'Current password is incorrect';
+          break;
+        case 'too-many-requests':
+          errorMessage = 'Too many attempts. Please try again later';
+          break;
+        case 'requires-recent-login':
+          errorMessage = 'Please log in again and retry';
+          break;
+        default:
+          errorMessage = e.message ?? 'An error occurred';
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error changing password: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
+// Add show password dialog method
+void _showChangePasswordDialog() {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text('Change Password'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _oldPasswordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'Current Password',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              SizedBox(height: 16),
+              TextField(
+                controller: _newPasswordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'New Password',
+                  border: OutlineInputBorder(),
+                  helperText: 'Password must contain at least:\n'
+                      '- 8 characters\n'
+                      '- 1 uppercase letter\n'
+                      '- 1 lowercase letter\n'
+                      '- 1 number\n'
+                      '- 1 special character',
+                  helperMaxLines: 6,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _oldPasswordController.clear();
+              _newPasswordController.clear();
+            },
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: _changePassword,
+            child: Text('Change Password'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+  Widget _buildProfileForm() {
+  return Padding(
+    padding: EdgeInsets.all(16),
+    child: Column(
+      children: [
+        _buildTextField(_nameController, 'Name', Icons.person),
+        _buildTextField(_emailController, 'Email', Icons.email),
+        _buildTextField(_phoneController, 'Phone', Icons.phone),
+        _buildTextField(_emergencyContactController, 'Emergency Contact',
+            Icons.emergency),
+        if (_isEditing)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: TextButton.icon(
+              icon: Icon(Icons.lock),
+              label: Text('Change Password'),
+              onPressed: _showChangePasswordDialog,
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+  // Widget _buildConnectedUsersSection() {
+  //   return Padding(
+  //     padding: EdgeInsets.all(16),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         Text('Connected Guardians',
+  //             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+  //         SizedBox(height: 8),
+  //         _buildConnectedUsersList(_connectedGuardians),
+  //         SizedBox(height: 16),
+  //         Text('Connected Seniors',
+  //             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+  //         SizedBox(height: 8),
+  //         _buildConnectedUsersList(_connectedSeniors),
+  //       ],
+  //     ),
+  //   );
+  // }
+
+Widget _buildConnectedUsersSection() {
     return Padding(
       padding: EdgeInsets.all(16),
       child: Column(
@@ -326,13 +709,97 @@ Future<void> _updateProfile() async {
           Text('Connected Guardians',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           SizedBox(height: 8),
-          _buildConnectedUsersList(_connectedGuardians),
+          
+          // Priority Guardian Section
+          if (_priorityGuardian != null) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Priority Guardian',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Theme.of(context).primaryColor
+                    )),
+                TextButton.icon(
+                  icon: Icon(Icons.star_half, color: Colors.orange),
+                  label: Text('Drop Priority'),
+                  onPressed: _dropPriorityGuardian,
+                ),
+              ],
+            ),
+            _buildGuardianTile(_priorityGuardian!, isPriority: true),
+            Divider(),
+          ],
+          
+          // Other Guardians Section
+          if (_otherGuardians.isNotEmpty) ...[
+            Text('Other Guardians',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              itemCount: _otherGuardians.length,
+              itemBuilder: (context, index) => _buildGuardianTile(_otherGuardians[index]),
+            ),
+          ] else if (_priorityGuardian == null && _otherGuardians.isEmpty) ...[
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No connected guardians'),
+              ),
+            ),
+          ],
+          
           SizedBox(height: 16),
           Text('Connected Seniors',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           SizedBox(height: 8),
           _buildConnectedUsersList(_connectedSeniors),
         ],
+      ),
+    );
+  }
+
+  Widget _buildGuardianTile(User guardian, {bool isPriority = false}) {
+    // Check if the user is a connected senior
+    bool isConnectedSenior = _connectedSeniors.any((senior) => senior.userID == guardian.userID);
+
+    return Card(
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundImage: guardian.avatar?.isNotEmpty == true
+              ? NetworkImage(guardian.avatar!)
+              : null,
+          child: guardian.avatar?.isEmpty ?? true
+              ? Text(guardian.name[0].toUpperCase())
+              : null,
+        ),
+        title: Text(guardian.name),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('60${formatPhoneNumberForDisplay(guardian.phoneNo)}'),
+            if (isPriority)
+              Text('Priority Guardian',
+                  style: TextStyle(color: Theme.of(context).primaryColor))
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isPriority && !isConnectedSenior)
+              IconButton(
+                icon: Icon(Icons.star_border),
+                onPressed: () => _setPriorityGuardian(guardian),
+                tooltip: 'Set as Priority Guardian',
+              ),
+            IconButton(
+              icon: Icon(Icons.remove_circle_outline, color: Colors.red),
+              onPressed: () => _confirmAndRemoveConnection(guardian.userID),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -601,17 +1068,29 @@ Future<void> _updateConnection(String seniorUserID, String guardianUserID) async
 
   Widget _buildTextField(TextEditingController controller, String label,
       IconData icon, {bool isPassword = false}) {
+    bool isPhoneField = label == 'Phone' || label == 'Emergency Contact';
+    
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: TextField(
         controller: controller,
         enabled: _isEditing,
         obscureText: isPassword,
+        keyboardType: isPhoneField ? TextInputType.phone : TextInputType.text,
+        onChanged: isPhoneField ? (value) {
+          final formatted = formatPhoneNumberForDisplay(value);
+          controller.value = TextEditingValue(
+            text: formatted,
+            selection: TextSelection.collapsed(offset: formatted.length),
+          );
+        } : null,
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: Icon(icon),
-          border: OutlineInputBorder(),
+          prefixText: isPhoneField ? '+60 ' : null,
+          border: const OutlineInputBorder(),
           enabled: _isEditing,
+          hintText: isPhoneField ? 'Enter phone number without country code' : null,
         ),
       ),
     );
@@ -619,7 +1098,7 @@ Future<void> _updateConnection(String seniorUserID, String guardianUserID) async
 
   Widget _buildConnectedUsersList(List<User> users) {
     if (users.isEmpty) {
-      return Card(
+      return const Card(
         child: Padding(
           padding: EdgeInsets.all(16),
           child: Text('No connected users'),
@@ -629,7 +1108,7 @@ Future<void> _updateConnection(String seniorUserID, String guardianUserID) async
 
     return ListView.builder(
       shrinkWrap: true,
-      physics: NeverScrollableScrollPhysics(),
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: users.length,
       itemBuilder: (context, index) {
         final user = users[index];
@@ -643,9 +1122,9 @@ Future<void> _updateConnection(String seniorUserID, String guardianUserID) async
                   : null,
             ),
             title: Text(user.name),
-            subtitle: Text(user.phoneNo),
+            subtitle: Text('60${formatPhoneNumberForDisplay(user.phoneNo)}'),
             trailing: IconButton(
-              icon: Icon(Icons.remove_circle_outline, color: Colors.red),
+              icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
               onPressed: () => _confirmAndRemoveConnection(user.userID),
             ),
           ),
@@ -660,7 +1139,8 @@ Future<void> _updateConnection(String seniorUserID, String guardianUserID) async
     _emailController.dispose();
     _phoneController.dispose();
     _emergencyContactController.dispose();
-    _passwordController.dispose();
+    _oldPasswordController.dispose();
+    _newPasswordController.dispose();
     super.dispose();
   }
 }

@@ -36,6 +36,7 @@ class _LoginPageState extends State<LoginPage> {
   String _email = '';
   String _password = '';
   bool _isProcessing = false;
+  bool _isPasswordVisible = false;
 
   final FaceDetector _faceDetector = FaceDetector(
     options: FaceDetectorOptions(
@@ -181,15 +182,36 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildLoginForm() {
+    bool _isPasswordVisible = false;
     return Form(
       key: _formKey,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Container(
+          //   height: 120,
+          //   child: Image.asset('assets/logo/logo.png',
+          //     fit: BoxFit.contain,
+          //   ),
+          // ),
+          SizedBox(height: 32),
           TextFormField(
             decoration: InputDecoration(
               labelText: 'Email',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              prefixIcon: Icon(Icons.email_outlined, color: Theme.of(context).primaryColor),
+              filled: true,
+              fillColor: Colors.grey[50],
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Theme.of(context).primaryColor),
+              ),
             ),
             validator: (value) {
               if (value == null || value.isEmpty) {
@@ -199,35 +221,77 @@ class _LoginPageState extends State<LoginPage> {
             },
             onSaved: (value) => _email = value!,
           ),
-          SizedBox(height: 16),
-          TextFormField(
-            decoration: InputDecoration(
-              labelText: 'Password',
-              border: OutlineInputBorder(),
-            ),
-            obscureText: true,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter your password';
-              }
-              return null;
-            },
-            onSaved: (value) => _password = value!,
-          ),
-          SizedBox(height: 16),
-          Row(
-            children: [
-              Checkbox(
+              SizedBox(height: 16),
+        StatefulBuilder(
+          builder: (context, setState) {
+            return TextFormField(
+              decoration: InputDecoration(
+                labelText: 'Password',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixIcon: Container(
+                  margin: EdgeInsets.only(left: 8, right: 8),
+                  child: Icon(Icons.lock_outline, color: Theme.of(context).primaryColor),
+                ),
+                suffixIcon: Container(
+                  margin: EdgeInsets.only(right: 8),
+                  child: IconButton(
+                    icon: Icon(
+                      _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isPasswordVisible = !_isPasswordVisible;
+                      });
+                    },
+                  ),
+                ),
+                filled: true,
+                fillColor: Colors.grey[50],
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Theme.of(context).primaryColor),
+                ),
+              ),
+              obscureText: !_isPasswordVisible,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your password';
+                }
+                return null;
+              },
+              onSaved: (value) => _password = value!,
+            );
+          },
+        ),
+        SizedBox(height: 16),
+        Row(
+          children: [
+            Transform.scale(
+              scale: 0.9,
+              child: Checkbox(
                 value: _keepSignedIn,
                 onChanged: (bool? value) {
                   setState(() {
                     _keepSignedIn = value ?? false;
                   });
                 },
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
               ),
-              Text('Keep me signed in'),
-            ],
-          ),
+            ),
+            Text('Keep me signed in', 
+              style: TextStyle(color: Colors.grey[700]),
+            ),
+          ],
+        ),
           SizedBox(height: 24),
           ElevatedButton(
             onPressed: _isProcessing ? null : _handleLogin,
@@ -235,11 +299,18 @@ class _LoginPageState extends State<LoginPage> {
                 ? SizedBox(
                     height: 20,
                     width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
                   )
-                : Text('Login'),
+                : Text('Login', style: TextStyle(fontSize: 16)),
             style: ElevatedButton.styleFrom(
-              minimumSize: Size(double.infinity, 48),
+              minimumSize: Size(double.infinity, 50),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 2,
             ),
           ),
         ],
@@ -250,44 +321,91 @@ class _LoginPageState extends State<LoginPage> {
 Widget _buildFaceLogin() {
     return Column(
       children: [
+        // Container(
+        //   height: 120,
+        //   child: Image.asset('assets/icon/face_recognition_icon.png',
+        //     fit: BoxFit.contain,
+        //   ),
+        // ),
+        SizedBox(height: 24),
         if (_capturedImage != null)
           Container(
             height: 200,
             width: double.infinity,
-            child: Image.file(
-              _capturedImage!,
-              fit: BoxFit.cover,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  spreadRadius: 1,
+                  blurRadius: 10,
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.file(
+                _capturedImage!,
+                fit: BoxFit.cover,
+              ),
             ),
           ),
-        SizedBox(height: 16),
-        ElevatedButton(
+        SizedBox(height: 24),
+        ElevatedButton.icon(
           onPressed: _captureImage,
-          child: Text('Take Picture'),
+          icon: Icon(Icons.camera_alt),
+          label: Text('Take Picture', style: TextStyle(fontSize: 16)),
           style: ElevatedButton.styleFrom(
-            minimumSize: Size(double.infinity, 48),
+            minimumSize: Size(double.infinity, 50),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 2,
           ),
         ),
         SizedBox(height: 16),
         Row(
           children: [
-            Checkbox(
-              value: _keepSignedIn,
-              onChanged: (bool? value) {
-                setState(() {
-                  _keepSignedIn = value ?? false;
-                });
-              },
+            Transform.scale(
+              scale: 0.9,
+              child: Checkbox(
+                value: _keepSignedIn,
+                onChanged: (bool? value) {
+                  setState(() {
+                    _keepSignedIn = value ?? false;
+                  });
+                },
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
             ),
-            Text('Keep me signed in'),
+            Text('Keep me signed in',
+              style: TextStyle(color: Colors.grey[700]),
+            ),
           ],
         ),
         SizedBox(height: 16),
-        ElevatedButton(
+        ElevatedButton.icon(
           onPressed: _capturedImage != null ? _handleFaceLogin : null,
-          child: Text('Login with Face'),
+          icon: Icon(
+            Icons.face,
+            color: Colors.white, 
+          ),
+          label: Text(
+            'Login with Face',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.white,
+            ),
+          ),
           style: ElevatedButton.styleFrom(
-            minimumSize: Size(double.infinity, 48),
-            backgroundColor: _capturedImage != null ? null : Colors.grey,
+            minimumSize: Size(double.infinity, 50),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            backgroundColor: _capturedImage != null ? Theme.of(context).primaryColor : Colors.grey,
+            elevation: 2,
           ),
         ),
       ],
@@ -1204,48 +1322,64 @@ double calculateSimilarity(List<double> embedding1, List<double> embedding2) {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Login')),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SegmentedButton<bool>(
-              segments: [
-                ButtonSegment(
-                  value: false,
-                  label: Text('Manual Login'),
+  return Scaffold(
+    appBar: AppBar(title: Text('Login')),
+    body: SingleChildScrollView(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+          padding: EdgeInsets.all(16),
+          child: Center(  // Center the image horizontally
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                height: 80,
+                width: 80,  // This will now work because it's centered
+                child: Image.asset(
+                  'assets/logo/logo.png',
+                  fit: BoxFit.contain,
                 ),
-                ButtonSegment(
-                  value: true,
-                  label: Text('Face Login'),
-                ),
-              ],
-              selected: {_isFaceLogin},
-              onSelectionChanged: (Set<bool> selected) {
-                setState(() {
-                  _isFaceLogin = selected.first;
-                });
-              },
+              ),
             ),
-            SizedBox(height: 24),
-            _isFaceLogin ? _buildFaceLogin() : _buildLoginForm(),
-            SizedBox(height: 16),
-            TextButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => RegisterPage()),
-                );
-              },
-              child: Text("Don't have an account? Register"),
-            ),
-          ],
+          ),
         ),
+          SegmentedButton<bool>(
+            segments: [
+              ButtonSegment(
+                value: false,
+                label: Text('Manual Login'),
+              ),
+              ButtonSegment(
+                value: true,
+                label: Text('Face Login'),
+              ),
+            ],
+            selected: {_isFaceLogin},
+            onSelectionChanged: (Set<bool> selected) {
+              setState(() {
+                _isFaceLogin = selected.first;
+              });
+            },
+          ),
+          SizedBox(height: 24),
+          _isFaceLogin ? _buildFaceLogin() : _buildLoginForm(),
+          SizedBox(height: 16),
+          TextButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => RegisterPage()),
+              );
+            },
+            child: Text("Don't have an account? Register"),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class FaceRecognitionUtils {

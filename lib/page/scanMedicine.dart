@@ -194,6 +194,7 @@ class _ScanPageState extends State<ScanPage> {
   final TextRecognizer _textRecognizer = TextRecognizer();
   final ImagePicker _picker = ImagePicker();
   bool _isProcessing = false;
+  bool _isSaving = false;
 
   @override
   void dispose() {
@@ -345,6 +346,10 @@ class _ScanPageState extends State<ScanPage> {
       return;
     }
 
+    setState(() {
+      _isSaving = true;
+    });
+
     try {
       String? imageUrl;
       if (_imageFile != null) {
@@ -372,57 +377,95 @@ class _ScanPageState extends State<ScanPage> {
         SnackBar(content: Text("Error saving medicine: $e")),
       );
     }
+    finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = true;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text("Scan Medicine"),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () => _pickImage(ImageSource.camera),
-                  icon: Icon(Icons.camera_alt),
-                  label: Text("Camera"),
-                ),
-                ElevatedButton.icon(
-                  onPressed: () => _pickImage(ImageSource.gallery),
-                  icon: Icon(Icons.photo_library),
-                  label: Text("Gallery"),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (_isProcessing)
-              CircularProgressIndicator()
-            else if (_imageFile != null)
-              Image.file(
-                _imageFile!,
-                height: 150,
-                width: 150,
-                fit: BoxFit.cover,
+  return Scaffold(
+    appBar: AppBar(
+      title: Text("Scan Medicine"),
+    ),
+    body: Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _pickImage(ImageSource.camera),
+                    icon: Icon(Icons.camera_alt),
+                    label: Text("Camera"),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => _pickImage(ImageSource.gallery),
+                    icon: Icon(Icons.photo_library),
+                    label: Text("Gallery"),
+                  ),
+                ],
               ),
-            const SizedBox(height: 16),
-            TextFormField(
-              decoration: InputDecoration(labelText: "Medicine Name"),
-              controller: TextEditingController(text: _medicineName),
-              onChanged: (value) => _medicineName = value,
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _saveMedicine,
-              child: Text("Save Medicine"),
-            ),
-          ],
+              const SizedBox(height: 16),
+              if (_isProcessing)
+                CircularProgressIndicator()
+              else if (_imageFile != null)
+                Image.file(
+                  _imageFile!,
+                  height: 150,
+                  width: 150,
+                  fit: BoxFit.cover,
+                ),
+              const SizedBox(height: 16),
+              TextFormField(
+                decoration: InputDecoration(labelText: "Medicine Name"),
+                controller: TextEditingController(text: _medicineName),
+                onChanged: (value) => _medicineName = value,
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _saveMedicine,
+                child: Text("Save Medicine"),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-  }
+        if (_isSaving)
+          Container(
+            color: Colors.black54,
+            child: Center(
+              child: Container(
+                padding: EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text(
+                      'Saving Medicine...',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
 }

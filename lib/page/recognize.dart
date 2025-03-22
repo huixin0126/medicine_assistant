@@ -1,5 +1,9 @@
+import 'dart:io';
+
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:medicine_assistant_app/page/scanMedicine.dart';
 
 class RecognizePage extends StatefulWidget {
@@ -14,6 +18,10 @@ class RecognizePage extends StatefulWidget {
 class _RecognizePageState extends State<RecognizePage> {
   int _selectedIndex = 0;
   final TextEditingController _nameController = TextEditingController();
+  final ImagePicker _picker = ImagePicker();
+  File? _selectedImage;
+  String? _currentImageUrl;
+  bool _isSaving = false;
 
   @override
   void dispose() {
@@ -25,6 +33,36 @@ class _RecognizePageState extends State<RecognizePage> {
     setState(() {
       _selectedIndex = index;
     });
+  }
+
+  void _showImageSourceDialog(String docId, StateSetter setState) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Update Image'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.camera_alt),
+              title: Text('Take Photo'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(docId, ImageSource.camera, setState);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.photo_library),
+              title: Text('Choose from Gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(docId, ImageSource.gallery, setState);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _deleteMedicine(String docId) async {
@@ -43,53 +81,181 @@ class _RecognizePageState extends State<RecognizePage> {
     }
   }
 
-  Future<void> _editMedicine(String docId, String currentName) async {
+  Future<void> _editMedicine(String docId, String currentName, String currentImageUrl) async {
     _nameController.text = currentName;
+    _selectedImage = null;
+    _currentImageUrl = currentImageUrl;
     
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Edit Medicine'),
-        content: TextField(
-          controller: _nameController,
-          decoration: InputDecoration(labelText: 'Medicine Name'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('Edit Medicine'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _nameController,
+                  decoration: InputDecoration(labelText: 'Medicine Name'),
+                  enabled: !_isSaving, // Disable when saving
+                ),
+                SizedBox(height: 16),
+                Container(
+                  height: 200,
+                  width: 200,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: _selectedImage != null
+                      ? Image.file(_selectedImage!, fit: BoxFit.cover)
+                      : (_currentImageUrl != null && _currentImageUrl!.isNotEmpty
+                          ? Image.network(
+                              _currentImageUrl!,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes != null
+                                        ? loadingProgress.cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                        : null,
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(Icons.broken_image, size: 50);
+                              },
+                            )
+                          : Icon(Icons.image_not_supported, size: 50)),
+                ),
+                SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: _isSaving ? null : () => _showImageSourceDialog(docId, setState),
+                  child: Text('Change Image'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: _isSaving 
+                  ? null 
+                  : () {
+                      _selectedImage = null;
+                      _currentImageUrl = null;
+                      Navigator.pop(context);
+                    },
+              child: Text('Cancel'),
+            ),
+            if (_isSaving)
+              Container(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
+              )
+            else
+              TextButton(
+                onPressed: () async {
+                  if (_nameController.text.isNotEmpty) {
+                    setState(() {
+                      _isSaving = true;
+                    });
+                    
+                    try {
+                      // First update the name
+                      final updates = {'name': _nameController.text};
+                      
+                      // If there's a new image, upload it and add to updates
+                      if (_selectedImage != null) {
+                        final imageUrl = await _uploadImage(_selectedImage!);
+                        if (imageUrl != null) {
+                          updates['imageData'] = imageUrl;
+                        }
+                      }
+
+                      // Update Firestore
+                      await FirebaseFirestore.instance
+                          .collection('Medicine')
+                          .doc(docId)
+                          .update(updates);
+                      
+                      if (mounted) {
+                        Navigator.pop(context);
+                        _selectedImage = null;
+                        _currentImageUrl = null;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Medicine updated successfully')),
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error updating medicine: $e')),
+                        );
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(() {
+                          _isSaving = false;
+                        });
+                      }
+                    }
+                  }
+                },
+                child: Text('Save'),
+              ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              if (_nameController.text.isNotEmpty) {
-                try {
-                  await FirebaseFirestore.instance
-                      .collection('Medicine')
-                      .doc(docId)
-                      .update({'name': _nameController.text});
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Medicine updated successfully')),
-                  );
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error updating medicine: $e')),
-                  );
-                }
-              }
-            },
-            child: Text('Save'),
-          ),
-        ],
       ),
     );
+  }
+
+  Future<String?> _uploadImage(File imageFile) async {
+    try {
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('medicine_images')
+          .child('${DateTime.now().millisecondsSinceEpoch}.jpg');
+
+      await storageRef.putFile(imageFile);
+      return await storageRef.getDownloadURL();
+    } catch (e) {
+      print('Error uploading image: $e');
+      return null;
+    }
+  }
+
+  Future<void> _pickImage(String docId, ImageSource source, StateSetter setState) async {
+    try {
+      final XFile? image = await _picker.pickImage(source: source);
+      if (image != null) {
+        setState(() {
+          _selectedImage = File(image.path);
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking image: $e')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Recognize & Medicines"),
+                title: const Text(
+                  'Recognize & Medicines',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  ),
       ),
       body: IndexedStack(
         index: _selectedIndex,
@@ -178,7 +344,7 @@ class _RecognizePageState extends State<RecognizePage> {
                           children: [
                             IconButton(
                               icon: Icon(Icons.edit, color: Colors.blue),
-                              onPressed: () => _editMedicine(docId, name),
+                              onPressed: () => _editMedicine(docId, name, imageUrl),
                             ),
                             IconButton(
                               icon: Icon(Icons.delete, color: Colors.red),
@@ -212,42 +378,42 @@ class _RecognizePageState extends State<RecognizePage> {
                     ),
                     SizedBox(height: 8),
                     Center(
-                      child: Container(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.width * 0.6,
-                          maxWidth: MediaQuery.of(context).size.width * 0.8,
-                        ),
-                        child: imageUrl != null && imageUrl.isNotEmpty
-                            ? Image.network(
-                            imageUrl,
-                            fit: BoxFit.contain,
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) {
-                                return child; // The image is fully loaded.
-                              }
-                              return Center(
-                                child: CircularProgressIndicator(
-                                  value: loadingProgress.expectedTotalBytes != null
-                                      ? loadingProgress.cumulativeBytesLoaded /
-                                          loadingProgress.expectedTotalBytes!
-                                      : null,
+                        child: Container(
+                          constraints: BoxConstraints(
+                            maxHeight: MediaQuery.of(context).size.width * 0.6,
+                            maxWidth: MediaQuery.of(context).size.width * 0.8,
+                          ),
+                          child: imageUrl != null && imageUrl.isNotEmpty
+                              ? Image.network(
+                                  imageUrl,
+                                  fit: BoxFit.contain,
+                                  loadingBuilder: (context, child, loadingProgress) {
+                                    if (loadingProgress == null) {
+                                      return child;
+                                    }
+                                    return Center(
+                                      child: CircularProgressIndicator(
+                                        value: loadingProgress.expectedTotalBytes != null
+                                            ? loadingProgress.cumulativeBytesLoaded /
+                                                loadingProgress.expectedTotalBytes!
+                                            : null,
+                                      ),
+                                    );
+                                  },
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Icon(
+                                      Icons.broken_image,
+                                      color: Colors.grey,
+                                    );
+                                  },
+                                )
+                              : Icon(
+                                  Icons.image_not_supported,
+                                  color: Colors.grey,
+                                  size: 100,
                                 ),
-                              );
-                            },
-                            errorBuilder: (context, error, stackTrace) {
-                              return Icon(
-                                Icons.broken_image,
-                                color: Colors.grey,
-                              );
-                            },
-                          )
-                            : Icon(
-                                Icons.image_not_supported,
-                                color: Colors.grey,
-                                size: 100,
-                              ),
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),

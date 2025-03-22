@@ -50,4 +50,27 @@ class User {
     seniorIDs: List<String>.from(json['seniorIDs'] ?? []),
     avatar: json['avatar'],  
   );
+
+  User copyWith({
+    String? userID,
+    String? name,
+    String? email,
+    String? phoneNo,
+    String? avatar,
+    String? emergencyContact,
+    List<String>? guardianIDs,
+    List<String>? seniorIDs,
+  }) {
+    return User(
+      userID: userID ?? this.userID,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      phoneNo: phoneNo ?? this.phoneNo,
+      avatar: avatar ?? this.avatar,
+      emergencyContact: emergencyContact ?? this.emergencyContact,
+      guardianIDs: guardianIDs ?? List<String>.from(this.guardianIDs),
+      seniorIDs: seniorIDs ?? List<String>.from(this.seniorIDs),
+    );
+  }
+  
 }

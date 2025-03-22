@@ -23,6 +23,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
   File? _medicineImage;
   final ImagePicker _picker = ImagePicker();
   bool _isLoading = false;
+  int _repeatDays = 1;
 
   Future<void> _pickImage(ImageSource source) async {
     final XFile? image = await _picker.pickImage(source: source);
@@ -78,30 +79,6 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
     }
   }
 
-  // Future<void> _addReminder() async {
-  //   final reminderTime = DateTime(
-  //     _selectedDate.year,
-  //     _selectedDate.month,
-  //     _selectedDate.day,
-  //     _selectedTime.hour,
-  //     _selectedTime.minute,
-  //   );
-
-  //   String? imageUrl = await _uploadImage();
-
-  //   await FirebaseFirestore.instance.collection('Reminder').add({
-  //     'userID': widget.userID,
-  //     'name': _medicineName.toLowerCase(),
-  //     'dose': _dose,
-  //     'times': Timestamp.fromDate(reminderTime),
-  //     'mealTiming': _mealTiming,
-  //     'imageUrl': imageUrl, // Save the image URL in Firestore
-  //     'status': 'Active',
-  //   });
-
-  //   Navigator.pop(context);
-  // }
-
   Future<void> saveMedicineIfNotExists({
     required String userID,
     required String name,
@@ -130,6 +107,64 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
     }
   }
 
+  // Future<void> _addReminder() async {
+  //   if (_medicineName.isEmpty) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(content: Text("Please enter medicine name")),
+  //     );
+  //     return;
+  //   }
+
+  //   setState(() {
+  //     _isLoading = true;
+  //   });
+
+  //   try {
+  //     final reminderTime = DateTime(
+  //       _selectedDate.year,
+  //       _selectedDate.month,
+  //       _selectedDate.day,
+  //       _selectedTime.hour,
+  //       _selectedTime.minute,
+  //     );
+
+  //     // Upload the image and get the URL
+  //     String? imageUrl = await _uploadImage();
+
+  //     // Save medicine if not already saved
+  //     await saveMedicineIfNotExists(
+  //       userID: widget.userID,
+  //       name: _medicineName,
+  //       imageData: imageUrl,
+  //     );
+
+  //     // Add reminder to Firestore
+  //     await FirebaseFirestore.instance.collection('Reminder').add({
+  //       'userID': widget.userID,
+  //       'name': _medicineName.toLowerCase(),
+  //       'dose': _dose,
+  //       'times': Timestamp.fromDate(reminderTime),
+  //       'mealTiming': _mealTiming,
+  //       'imageUrl': imageUrl,
+  //       'status': 'Active',
+  //     });
+
+  //     if (mounted) {
+  //       Navigator.pop(context);
+  //     }
+  //   } catch (e) {
+  //     setState(() {
+  //       _isLoading = false;
+  //     });
+
+  //     if (mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(content: Text("Error adding reminder: $e")),
+  //       );
+  //     }
+  //   }
+  // }
+
   Future<void> _addReminder() async {
     if (_medicineName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -143,15 +178,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
     });
 
     try {
-      final reminderTime = DateTime(
-        _selectedDate.year,
-        _selectedDate.month,
-        _selectedDate.day,
-        _selectedTime.hour,
-        _selectedTime.minute,
-      );
-
-      // Upload the image and get the URL
+      // Upload the image and get the URL (only need to do this once)
       String? imageUrl = await _uploadImage();
 
       // Save medicine if not already saved
@@ -161,16 +188,34 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
         imageData: imageUrl,
       );
 
-      // Add reminder to Firestore
-      await FirebaseFirestore.instance.collection('Reminder').add({
-        'userID': widget.userID,
-        'name': _medicineName.toLowerCase(),
-        'dose': _dose,
-        'times': Timestamp.fromDate(reminderTime),
-        'mealTiming': _mealTiming,
-        'imageUrl': imageUrl,
-        'status': 'Active',
-      });
+      // Generate base reminder time
+      final baseReminderTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedTime.hour,
+        _selectedTime.minute,
+      );
+
+      // Create a separate reminder document for each day
+      for (int i = 0; i < _repeatDays; i++) {
+        final reminderTime = baseReminderTime.add(Duration(days: i));
+        
+        // Add individual reminder to Firestore
+        await FirebaseFirestore.instance.collection('Reminder').add({
+          'userID': widget.userID,
+          'name': _medicineName.toLowerCase(),
+          'dose': _dose,
+          'times': [Timestamp.fromDate(reminderTime)], // Single time for each reminder
+          'mealTiming': _mealTiming,
+          'imageUrl': imageUrl,
+          'status': 'Active',
+          'repeatDays': _repeatDays,  // Keep this for reference
+          'reminderGroup': baseReminderTime.millisecondsSinceEpoch.toString(), // To track related reminders
+          'reminderIndex': i + 1, // Which day in the sequence this reminder is
+          'totalReminders': _repeatDays // Total number of reminders in the group
+        });
+      }
 
       if (mounted) {
         Navigator.pop(context);
@@ -185,6 +230,22 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
           SnackBar(content: Text("Error adding reminder: $e")),
         );
       }
+    }
+  }
+
+  String _getRepeatDescription() {
+    if (_repeatDays == 1) {
+      return "Reminder set for today only";
+    } else {
+      final lastDay = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+      ).add(Duration(days: _repeatDays - 1));
+      
+      return "Will create $_repeatDays separate reminders\n"
+             "Starting: ${DateFormat('MMM d').format(_selectedDate)}\n"
+             "Ending: ${DateFormat('MMM d').format(lastDay)}";
     }
   }
 
@@ -273,6 +334,35 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                         _mealTiming = value!;
                       });
                     },
+                  ),
+
+                  TextFormField(
+                    decoration: InputDecoration(
+                      labelText: "Number of Days",
+                      hintText: "1 = today only",
+                    ),
+                    keyboardType: TextInputType.number,
+                    initialValue: "1",  // Set initial value to 1
+                    onChanged: (value) {
+                      final parsed = int.tryParse(value) ?? 1;
+                      setState(() {
+                        _repeatDays = parsed < 1 ? 1 : parsed;  // Ensure minimum value is 1
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  
+                  // Updated preview text
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      _getRepeatDescription(),
+                      style: TextStyle(
+                        color: Colors.blue[700],
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                   const SizedBox(height: 20),
                   ElevatedButton(

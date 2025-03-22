@@ -236,7 +236,13 @@ Future<void> vibrateOnAction() async {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Medication Reminder'),
+                title: const Text(
+                  'Medication Reminder',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  ),
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -557,7 +563,7 @@ class ReminderCard extends StatelessWidget {
                       },
                       style: ElevatedButton.styleFrom(
                         foregroundColor: Colors.white,
-                        backgroundColor: Colors.purple,
+                        backgroundColor: Colors.lightBlue.shade800,
                       ),
                       child: const Text('Done'),
                     ),

@@ -45,7 +45,8 @@ class _HomePageState extends State<HomePage> {
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.purple,
+        // backgroundColor: Colors.blue.shade50,
+        selectedItemColor: Colors.lightBlue.shade900,
         unselectedItemColor: Colors.grey,
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,

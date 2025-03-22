@@ -144,6 +144,30 @@ class _IndexHomeState extends State<IndexHome> with WidgetsBindingObserver{
     }
   }
 
+  Future<void> _callEmergencyContact() async {
+    try {
+      // Check permissions
+      bool permissionsGranted = await _checkAndRequestPermissions();
+
+      if (!permissionsGranted) {
+        _showErrorDialog('Please grant all required permissions');
+        return;
+      }
+
+      // Fetch emergency contact information
+      Map<String, String> contacts = await _getEmergencyContacts();
+      String emergencyContactPhoneNumber = contacts['emergencyContactPhoneNumber']!;
+
+      // Make the call
+      final Uri callUri = Uri(scheme: 'tel', path: emergencyContactPhoneNumber);
+      await launchUrl(callUri, mode: LaunchMode.externalApplication);
+
+    } catch (e) {
+      print('Emergency call error: $e');
+      _showErrorDialog('Failed to make emergency call: $e');
+    }
+  }
+
   // Future<void> _triggerPanicButton() async {
   //   try {
   //     // First, check and request all necessary permissions
@@ -643,7 +667,28 @@ Stream<List<QueryDocumentSnapshot>> _getUpcomingReminders() {
                       style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold), // Set the text color to white
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
+                      backgroundColor: Color(0xFFB90606),
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      textStyle: const TextStyle(fontSize: 20),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12), // Reduced spacing between buttons
+                // Emergency Contact Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _callEmergencyContact,
+                    icon: const Icon(
+                      Icons.phone,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'Call Emergency Contact',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
                       padding: const EdgeInsets.symmetric(vertical: 20),
                       textStyle: const TextStyle(fontSize: 20),
                     ),
@@ -696,10 +741,10 @@ Stream<List<QueryDocumentSnapshot>> _getUpcomingReminders() {
                                   children: [
                                     Text(
                                       data['name'],
-                                      style: const TextStyle(
-                                        color: Colors.purple,
+                                      style: TextStyle(
+                                        color: Colors.lightBlue[800],
                                         fontSize: 16,
-                                        fontWeight: FontWeight.w500,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -712,7 +757,7 @@ Stream<List<QueryDocumentSnapshot>> _getUpcomingReminders() {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      DateFormat('hh:mm a').format(nextTime),
+                                      DateFormat('yyyy-MM-dd (hh:mm a)').format(nextTime),
                                       style: const TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w500,
@@ -767,7 +812,7 @@ Stream<List<QueryDocumentSnapshot>> _getUpcomingReminders() {
                           return _buildStatsCard(
                             'Total medicine',
                             totalMedicine.toString(),
-                            const Color.fromARGB(255, 222, 174, 230)!,
+                            const Color.fromARGB(255, 210, 144, 228)!,
                             Icons.medication,
                           );
                         },
@@ -795,7 +840,7 @@ Stream<List<QueryDocumentSnapshot>> _getUpcomingReminders() {
                           return _buildStatsCard(
                             "Today's Reminders",
                             totalReminders.toString(),
-                            const Color.fromARGB(255, 250, 199, 122)!,
+                            const Color.fromARGB(255, 255, 188, 81)!,
                             Icons.calendar_today,
                           );
                         },
